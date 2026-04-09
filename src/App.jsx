@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { API_BASE_URL, createProfile, listProfiles, recognizeFace, runFgsmAttack } from './api'
+import { Analytics } from "@vercel/analytics/next"
 
 const tabs = [
   { id: 'register', label: 'Register Face' },
@@ -31,6 +33,16 @@ const seedProfiles = [
   },
 ]
 
+function getProfileById(profiles, profileId) {
+  return profiles.find((profile) => String(profile.id) === String(profileId))
+}
+
+function formatConfidence(confidence) {
+  if (typeof confidence !== 'number' || Number.isNaN(confidence)) return ''
+  const value = confidence <= 1 ? confidence * 100 : confidence
+  return `${value.toFixed(1)}%`
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('register')
   const [profiles, setProfiles] = useState(seedProfiles)
@@ -42,17 +54,64 @@ function App() {
   const [cameraState, setCameraState] = useState('idle')
   const [cameraError, setCameraError] = useState('')
   const [registerMessage, setRegisterMessage] = useState(
-    'Capture or upload a face to add a demo profile.',
+    'Capture or upload a face to add a profile, then save it through the API.',
   )
   const [recognitionImage, setRecognitionImage] = useState('')
-  const [recognizedProfileId, setRecognizedProfileId] = useState(seedProfiles[0].id)
+  const [recognizedProfileId, setRecognizedProfileId] = useState(String(seedProfiles[0].id))
   const [recognitionResult, setRecognitionResult] = useState('')
   const [attackImage, setAttackImage] = useState('')
-  const [attackTargetId, setAttackTargetId] = useState(seedProfiles[1].id)
+  const [attackTargetId, setAttackTargetId] = useState(String(seedProfiles[1].id))
   const [attackStrength, setAttackStrength] = useState(12)
+  const [attackResult, setAttackResult] = useState('Upload an input image to simulate the adversarial example.')
+  const [attackNoiseImage, setAttackNoiseImage] = useState('')
+  const [attackOutputImage, setAttackOutputImage] = useState('')
+  const [apiStatus, setApiStatus] = useState('Loading profiles from the backend.')
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [isRecognizing, setIsRecognizing] = useState(false)
+  const [isRunningAttack, setIsRunningAttack] = useState(false)
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadProfiles() {
+      try {
+        const remoteProfiles = await listProfiles()
+
+        if (cancelled || remoteProfiles.length === 0) return
+
+        setProfiles(remoteProfiles)
+        setRecognizedProfileId(String(remoteProfiles[0].id))
+        setAttackTargetId(String(remoteProfiles[0].id))
+        setApiStatus(`Connected to ${API_BASE_URL || 'the current origin'} and loaded profiles.`)
+      } catch (error) {
+        if (cancelled) return
+        setApiStatus(
+          `Backend not reachable yet. Using local demo profiles. ${error.message || 'API request failed.'}`,
+        )
+      }
+    }
+
+    loadProfiles()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (profiles.length === 0) return
+
+    if (!getProfileById(profiles, recognizedProfileId)) {
+      setRecognizedProfileId(String(profiles[0].id))
+    }
+
+    if (!getProfileById(profiles, attackTargetId)) {
+      setAttackTargetId(String(profiles[0].id))
+    }
+  }, [profiles, recognizedProfileId, attackTargetId])
 
   useEffect(() => {
     return () => {
@@ -118,7 +177,7 @@ function App() {
 
       setCameraReady(true)
       setCameraState('ready')
-      setRegisterMessage('Camera is live. Capture a photo or upload an image instead.')
+      setRegisterMessage('Camera is live. Capture all five guided poses or upload them instead.')
     } catch (error) {
       setCameraReady(false)
       setCameraState('error')
@@ -130,7 +189,7 @@ function App() {
             ? 'No camera device was found on this machine.'
             : error?.name === 'NotReadableError'
               ? 'The camera is already in use by another application.'
-          : 'Camera could not be started. Retry or use image upload instead.',
+              : 'Camera could not be started. Retry or use image upload instead.',
       )
     }
   }
@@ -202,66 +261,117 @@ function App() {
     setRegisterMessage('All five photos captured. Add a name and save the user.')
   }
 
-  function registerProfile() {
+  async function registerProfile() {
     if (!captureName.trim() || Object.keys(capturedShots).length < capturePrompts.length) {
       setRegisterMessage('A name and all five face images are required for registration.')
       return
     }
 
-    const nextProfile = {
-      id: Date.now(),
-      name: captureName.trim(),
-      image: capturedShots.front,
-      photos: capturePrompts.map((prompt) => capturedShots[prompt.id]).filter(Boolean),
-    }
+    setIsRegistering(true)
+    setRegisterMessage('Saving profile to the backend.')
 
-    setProfiles((current) => [nextProfile, ...current])
-    setRecognizedProfileId(nextProfile.id)
-    setAttackTargetId(nextProfile.id)
-    setCaptureName('')
-    setCapturedImage('')
-    setCapturedShots({})
-    setCaptureStep(0)
-    setRegisterMessage(`Profile saved for ${nextProfile.name}.`)
+    try {
+      const profile = await createProfile({
+        name: captureName.trim(),
+        captures: capturePrompts.reduce((result, prompt) => {
+          result[prompt.id] = capturedShots[prompt.id]
+          return result
+        }, {}),
+      })
+
+      setProfiles((current) => [profile, ...current.filter((item) => String(item.id) !== String(profile.id))])
+      setRecognizedProfileId(String(profile.id))
+      setAttackTargetId(String(profile.id))
+      setCaptureName('')
+      setCapturedImage('')
+      setCapturedShots({})
+      setCaptureStep(0)
+      setRegisterMessage(`Profile saved for ${profile.name}.`)
+      setApiStatus(`Connected to ${API_BASE_URL || 'the current origin'} and accepting writes.`)
+    } catch (error) {
+      setRegisterMessage(`Profile save failed. ${error.message || 'Backend request failed.'}`)
+    } finally {
+      setIsRegistering(false)
+    }
   }
 
-  function runRecognitionDemo() {
+  async function runRecognitionDemo() {
     if (!recognitionImage) {
       setRecognitionResult('Upload a face image to test recognition.')
       return
     }
 
-    const matchedUser = profiles.find((profile) => profile.id === recognizedProfileId)
-    if (!matchedUser) {
-      setRecognitionResult('No registered profiles are available yet.')
+    setIsRecognizing(true)
+    setRecognitionResult('Running recognition request.')
+
+    try {
+      const result = await recognizeFace({ image: recognitionImage })
+      const confidenceText = formatConfidence(result?.confidence)
+      const matchedProfile =
+        result?.match || getProfileById(profiles, result?.profileId || result?.matchedProfileId)
+      const matchedName =
+        matchedProfile?.name || result?.name || result?.matchedName || 'Unknown user'
+      const details = [confidenceText && `Confidence score: ${confidenceText}`, result?.message]
+        .filter(Boolean)
+        .join(' ')
+
+      setRecognitionResult(`Welcome ${matchedName}.${details ? ` ${details}` : ''}`)
+    } catch (error) {
+      setRecognitionResult(`Recognition request failed. ${error.message || 'Backend request failed.'}`)
+    } finally {
+      setIsRecognizing(false)
+    }
+  }
+
+  async function runAttackDemo() {
+    if (!attackImage) {
+      setAttackResult('Upload an input image to simulate the adversarial example.')
       return
     }
 
-    setRecognitionResult(`Welcome ${matchedUser.name}. Confidence score: 98.2%`)
+    setIsRunningAttack(true)
+    setAttackResult('Running FGSM request.')
+
+    try {
+      const result = await runFgsmAttack({
+        image: attackImage,
+        targetProfileId: attackTargetId,
+        epsilon: attackStrength,
+      })
+
+      const target =
+        result?.target || getProfileById(profiles, result?.targetProfileId || attackTargetId)
+      const targetName = target?.name || result?.targetName || 'the requested target'
+      const summary =
+        result?.message ||
+        `FGSM perturbation applied at epsilon ${result?.epsilon || attackStrength}. Model prediction shifted to ${targetName}.`
+
+      setAttackNoiseImage(result?.perturbationImage || result?.noiseImage || '')
+      setAttackOutputImage(result?.adversarialImage || '')
+      setAttackResult(summary)
+    } catch (error) {
+      setAttackNoiseImage('')
+      setAttackOutputImage('')
+      setAttackResult(`FGSM request failed. ${error.message || 'Backend request failed.'}`)
+    } finally {
+      setIsRunningAttack(false)
+    }
   }
 
-  function runAttackDemo() {
-    if (!attackImage) return 'Upload an input image to simulate the adversarial example.'
-
-    const target = profiles.find((profile) => profile.id === attackTargetId)
-    if (!target) return 'Select a target user for the attack output.'
-
-    return `FGSM perturbation applied at epsilon ${attackStrength}. Model prediction shifted to ${target.name}.`
-  }
-
-  const attackResult = runAttackDemo()
-  const targetProfile = profiles.find((profile) => profile.id === attackTargetId)
+  const targetProfile = getProfileById(profiles, attackTargetId)
   const noiseOpacity = Math.min(0.18 + attackStrength / 64, 0.6)
   const currentPrompt = capturePrompts[captureStep]
   const completedShots = Object.keys(capturedShots).length
   const registrationReady = completedShots === capturePrompts.length
-  const noiseStyle = {
-    backgroundColor: '#091727',
-    backgroundImage: `
-      repeating-linear-gradient(0deg, rgba(47,127,249,${noiseOpacity}) 0 1px, transparent 1px 6px),
-      repeating-linear-gradient(90deg, rgba(255,255,255,${noiseOpacity / 2}) 0 1px, transparent 1px 7px)
-    `,
-  }
+  const noiseStyle = attackNoiseImage
+    ? { backgroundImage: `url(${attackNoiseImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    : {
+        backgroundColor: '#091727',
+        backgroundImage: `
+          repeating-linear-gradient(0deg, rgba(47,127,249,${noiseOpacity}) 0 1px, transparent 1px 6px),
+          repeating-linear-gradient(90deg, rgba(255,255,255,${noiseOpacity / 2}) 0 1px, transparent 1px 7px)
+        `,
+      }
 
   return (
     <div className="app-shell">
@@ -287,10 +397,11 @@ function App() {
 
       <section className="hero">
         <p className="hero-text">
-          The interface separates normal authentication from the FGSM attack scenario so the
-          model behavior is easy to present. Current actions are mocked on the client while
-          backend endpoints are still being integrated.
+          The interface now calls real API endpoints for registration, recognition, and FGSM
+          attack generation. Until the backend is online, the UI falls back to local demo
+          profiles for presentation only.
         </p>
+        <p className="hero-text">{apiStatus}</p>
       </section>
 
       <main className="panel">
@@ -304,7 +415,8 @@ function App() {
 
               <p className="section-copy">
                 Capture five guided images for each user: straight on, look left, look right,
-                eyebrows up, and head down. The straight-on image is used as the preview photo.
+                eyebrows up, and head down. The backend receives all five images as base64 data
+                and persists the enrolled profile.
               </p>
 
               <div className="camera-frame">
@@ -360,7 +472,7 @@ function App() {
                       : 'primary-button compact-button capture-button'
                   }
                   onClick={cameraState === 'ready' ? captureFromCamera : startCamera}
-                  disabled={registrationReady}
+                  disabled={registrationReady || isRegistering}
                 >
                   {cameraState === 'ready' ? 'Capture Photo' : 'Start'}
                 </button>
@@ -402,13 +514,14 @@ function App() {
                 type="button"
                 className={registrationReady ? 'primary-button wide' : 'primary-button wide disabled-button'}
                 onClick={registerProfile}
-                disabled={!registrationReady}
+                disabled={!registrationReady || isRegistering}
               >
-                Save To Database
+                {isRegistering ? 'Saving...' : 'Save To Database'}
               </button>
 
               <p className="status-text">{registerMessage}</p>
               <div className="camera-diagnostics">
+                <span>API base URL: {API_BASE_URL || 'same origin'}</span>
                 <span>Secure context: {window.isSecureContext ? 'yes' : 'no'}</span>
                 <span>Camera API: {navigator.mediaDevices?.getUserMedia ? 'available' : 'missing'}</span>
                 {cameraError && <span>Error: {cameraError}</span>}
@@ -431,7 +544,7 @@ function App() {
 
               <div className="database-list">
                 <div className="list-header">
-                  <h3>Demo database</h3>
+                  <h3>Profile database</h3>
                   <span>{profiles.length} users</span>
                 </div>
 
@@ -457,8 +570,8 @@ function App() {
               </div>
 
               <p className="section-copy">
-                Upload a face to simulate inference and choose which enrolled profile the mock
-                model should match.
+                Upload a face image and send it to the recognition endpoint. The API should
+                return the matched profile plus a confidence score.
               </p>
 
               <label className="secondary-button">
@@ -471,21 +584,26 @@ function App() {
               </label>
 
               <label className="field">
-                <span>Mock matched profile</span>
+                <span>Selected enrolled profile</span>
                 <select
                   value={recognizedProfileId}
-                  onChange={(event) => setRecognizedProfileId(Number(event.target.value))}
+                  onChange={(event) => setRecognizedProfileId(event.target.value)}
                 >
                   {profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
+                    <option key={profile.id} value={String(profile.id)}>
                       {profile.name}
                     </option>
                   ))}
                 </select>
               </label>
 
-              <button type="button" className="primary-button wide" onClick={runRecognitionDemo}>
-                Run Recognition
+              <button
+                type="button"
+                className="primary-button wide"
+                onClick={runRecognitionDemo}
+                disabled={isRecognizing}
+              >
+                {isRecognizing ? 'Running...' : 'Run Recognition'}
               </button>
 
               <div className="result-banner success">
@@ -519,9 +637,9 @@ function App() {
               </div>
 
               <p className="section-copy">
-                This panel explains how an adversarial perturbation can force the model toward
-                the wrong enrolled identity. The perturbation itself is visualized conceptually
-                in the frontend.
+                Upload an image and send it to the FGSM endpoint with a target profile and
+                epsilon value. The backend can optionally return the perturbation map and the
+                adversarial output image.
               </p>
 
               <label className="secondary-button">
@@ -535,12 +653,9 @@ function App() {
 
               <label className="field">
                 <span>Target impersonation profile</span>
-                <select
-                  value={attackTargetId}
-                  onChange={(event) => setAttackTargetId(Number(event.target.value))}
-                >
+                <select value={attackTargetId} onChange={(event) => setAttackTargetId(event.target.value)}>
                   {profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
+                    <option key={profile.id} value={String(profile.id)}>
                       {profile.name}
                     </option>
                   ))}
@@ -563,6 +678,15 @@ function App() {
                 <strong>{attackStrength}</strong>
                 <span>High perturbation</span>
               </div>
+
+              <button
+                type="button"
+                className="primary-button wide"
+                onClick={runAttackDemo}
+                disabled={isRunningAttack}
+              >
+                {isRunningAttack ? 'Running...' : 'Run FGSM Attack'}
+              </button>
 
               <div className="result-banner warning">{attackResult}</div>
             </div>
@@ -593,7 +717,7 @@ function App() {
                   <p className="attack-stage-label">Raw perturbation</p>
                   <div className="face-preview noise-box" style={noiseStyle}>
                     <div className="noise-label">
-                      <strong>Raw noise</strong>
+                      <strong>{attackNoiseImage ? 'Backend output' : 'Raw noise'}</strong>
                       <span>Epsilon {attackStrength}</span>
                     </div>
                   </div>
@@ -606,7 +730,9 @@ function App() {
                 <div className="attack-stage">
                   <p className="attack-stage-label">Predicted target</p>
                   <div className="face-preview">
-                    {targetProfile ? (
+                    {attackOutputImage ? (
+                      <img src={attackOutputImage} alt="Adversarial output preview" />
+                    ) : targetProfile ? (
                       <img src={targetProfile.image} alt={targetProfile.name} />
                     ) : (
                       <div className="empty-state">Target user</div>
@@ -646,8 +772,8 @@ function App() {
               <div>
                 <strong>Current scope</strong>
                 <p>
-                  This frontend focuses on UX, state flow, and presentation. Real model and
-                  database integrations can be added afterward.
+                  This frontend now has API wiring in place. The remaining work is implementing
+                  the backend endpoints and their model/database logic.
                 </p>
               </div>
             </div>
@@ -656,21 +782,25 @@ function App() {
           <div className="section-card">
             <div className="section-heading">
               <p className="section-kicker">Integration</p>
-              <h2>Suggested integration points</h2>
+              <h2>Required backend endpoints</h2>
             </div>
 
             <div className="integration-list">
               <div className="integration-item">
-                <span>POST</span>
-                <p>`/api/enroll-face` for uploading image data and saving profile metadata.</p>
+                <span>GET</span>
+                <p>`/api/profiles` returns the enrolled profile list used by the dropdowns and database panel.</p>
               </div>
               <div className="integration-item">
                 <span>POST</span>
-                <p>`/api/recognize-face` for inference and confidence scores.</p>
+                <p>`/api/profiles` accepts `{ name, captures }` and returns the saved profile record.</p>
               </div>
               <div className="integration-item">
                 <span>POST</span>
-                <p>`/api/run-fgsm` for generating adversarial examples against a target user.</p>
+                <p>`/api/recognitions` accepts `{ image }` and returns a matched profile plus confidence.</p>
+              </div>
+              <div className="integration-item">
+                <span>POST</span>
+                <p>`/api/attacks/fgsm` accepts `{ image, targetProfileId, epsilon }` and returns attack outputs.</p>
               </div>
             </div>
           </div>
