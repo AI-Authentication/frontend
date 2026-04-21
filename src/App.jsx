@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { API_BASE_URL, createProfile, listProfiles, recognizeFace, runFgsmAttack } from './api'
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from '@vercel/analytics/react'
 
 const tabs = [
   { id: 'register', label: 'Register Face' },
@@ -374,6 +374,7 @@ function App() {
       }
 
   return (
+    <>
     <div className="app-shell">
       <header className="topbar">
         <div className="brand-block">
@@ -807,6 +808,8 @@ function App() {
         </section>
       </main>
     </div>
+    <Analytics />
+    </>
   )
 }
 
