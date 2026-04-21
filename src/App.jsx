@@ -789,19 +789,19 @@ function App() {
             <div className="integration-list">
               <div className="integration-item">
                 <span>GET</span>
-                <p>`/api/profiles` returns the enrolled profile list used by the dropdowns and database panel.</p>
+                <p><code>/api/profiles</code> returns the enrolled profile list used by the dropdowns and database panel.</p>
               </div>
               <div className="integration-item">
                 <span>POST</span>
-                <p>`/api/profiles` accepts `{ name, captures }` and returns the saved profile record.</p>
+                <p><code>/api/profiles</code> accepts <code>{'{ name, captures }'}</code> and returns the saved profile record.</p>
               </div>
               <div className="integration-item">
                 <span>POST</span>
-                <p>`/api/recognitions` accepts `{ image }` and returns a matched profile plus confidence.</p>
+                <p><code>/api/recognitions</code> accepts <code>{'{ image }'}</code> and returns a matched profile plus confidence.</p>
               </div>
               <div className="integration-item">
                 <span>POST</span>
-                <p>`/api/attacks/fgsm` accepts `{ image, targetProfileId, epsilon }` and returns attack outputs.</p>
+                <p><code>/api/attacks/fgsm</code> accepts <code>{'{ image, targetProfileId, epsilon }'}</code> and returns attack outputs.</p>
               </div>
             </div>
           </div>
