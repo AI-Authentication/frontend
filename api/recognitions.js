@@ -24,6 +24,7 @@ export default async function handler(request, response) {
     }
 
     return sendJson(response, {
+      isMatch: true,
       matchedProfileId: selected.id,
       matchedName: selected.name,
       confidence: 0.98,

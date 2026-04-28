@@ -42,6 +42,93 @@ const seedProfiles = [
   },
 ]
 
+const overviewContent = {
+  register: {
+    heading: 'How registration works',
+    copy:
+      'Registration walks a user through capture prompts, stores a set of guided face images, and builds the enrolled profile used by the rest of the system.',
+    cards: [
+      {
+        title: 'Capture sequence',
+        image:
+          'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80',
+        description:
+          'The camera guides the user through multiple views so the profile has coverage across pose changes.',
+      },
+      {
+        title: 'Enrollment storage',
+        image:
+          'https://images.unsplash.com/photo-1555949963-aa79dcee981c?auto=format&fit=crop&w=1200&q=80',
+        description:
+          'Captured photos are saved as a single enrolled identity that can be searched and managed later.',
+      },
+      {
+        title: 'Profile database',
+        image:
+          'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80',
+        description:
+          'Each saved registration becomes part of the profile set used for recognition and adversarial testing.',
+      },
+    ],
+  },
+  recognize: {
+    heading: 'How recognition works',
+    copy:
+      'Recognition compares a fresh face image against the enrolled profile set and returns whether it matched along with a confidence percentage.',
+    cards: [
+      {
+        title: 'Input capture',
+        image:
+          'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=1200&q=80',
+        description:
+          'A live camera frame or uploaded image becomes the probe image that will be evaluated.',
+      },
+      {
+        title: 'Profile comparison',
+        image:
+          'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1200&q=80',
+        description:
+          'The backend compares the input against enrolled users and selects the closest match candidate.',
+      },
+      {
+        title: 'Decision output',
+        image:
+          'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80',
+        description:
+          'The system returns match or no-match status together with a confidence percentage from the model.',
+      },
+    ],
+  },
+  attack: {
+    heading: 'How the FGSM demo works',
+    copy:
+      'The FGSM tab shows how a source image can be perturbed toward a target identity, then visualizes the changed image and resulting impersonation confidence.',
+    cards: [
+      {
+        title: 'Source image',
+        image:
+          'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1200&q=80',
+        description:
+          'The attack starts from a clean uploaded or captured face image that acts as the original sample.',
+      },
+      {
+        title: 'Target identity',
+        image:
+          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=1200&q=80',
+        description:
+          'A chosen enrolled profile defines which identity the attack is trying to impersonate.',
+      },
+      {
+        title: 'Perturbation result',
+        image:
+          'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80',
+        description:
+          'The backend returns a perturbed image and the confidence that the manipulated sample now matches the target.',
+      },
+    ],
+  },
+}
+
 function getProfileById(profiles, profileId) {
   return profiles.find((profile) => String(profile.id) === String(profileId))
 }
@@ -222,6 +309,7 @@ function App() {
   const registerVideoRef = useRef(null)
   const recognitionVideoRef = useRef(null)
   const attackVideoRef = useRef(null)
+  const attackPreviewVideoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
 
@@ -241,6 +329,10 @@ function App() {
 
     if (attackVideoRef.current) {
       attackVideoRef.current.srcObject = null
+    }
+
+    if (attackPreviewVideoRef.current) {
+      attackPreviewVideoRef.current.srcObject = null
     }
 
     setCameraReady(false)
@@ -296,6 +388,31 @@ function App() {
       setRecognitionMode('upload')
     }
   }, [activeTab])
+
+  useEffect(() => {
+    if (!streamRef.current || !cameraReady) return
+
+    const attachStream = async (video) => {
+      if (!video) return
+      if (video.srcObject !== streamRef.current) {
+        video.srcObject = streamRef.current
+      }
+      await video.play().catch(() => {})
+    }
+
+    if (cameraView === 'attack') {
+      attachStream(attackVideoRef.current)
+      attachStream(attackPreviewVideoRef.current)
+    }
+
+    if (cameraView === 'recognize') {
+      attachStream(recognitionVideoRef.current)
+    }
+
+    if (cameraView === 'register') {
+      attachStream(registerVideoRef.current)
+    }
+  }, [cameraReady, cameraView, attackImage])
 
   async function startCamera(view) {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -490,8 +607,20 @@ function App() {
   }
 
   async function runRecognitionDemo() {
-    if (!recognitionImage) {
-      setRecognitionResult('Capture or upload a face image to test recognition.')
+    let imageToRecognize = recognitionImage
+
+    if (!imageToRecognize && cameraReady && cameraView === 'recognize') {
+      const video = recognitionVideoRef.current
+      const canvas = canvasRef.current
+
+      if (video && canvas) {
+        imageToRecognize = captureCompressedFrame(video, canvas)
+        setRecognitionImage(imageToRecognize)
+      }
+    }
+
+    if (!imageToRecognize) {
+      setRecognitionResult('Capture, stream, or upload a face image to test recognition.')
       return
     }
 
@@ -500,19 +629,26 @@ function App() {
 
     try {
       const result = await recognizeFace({
-        image: recognitionImage,
+        image: imageToRecognize,
         selectedProfileId: recognizedProfileId,
       })
       const confidenceText = formatConfidence(result?.confidence)
+      const isMatch =
+        typeof result?.isMatch === 'boolean'
+          ? result.isMatch
+          : typeof result?.matchFound === 'boolean'
+            ? result.matchFound
+            : Boolean(result?.match || result?.profileId || result?.matchedProfileId)
       const matchedProfile =
         result?.match || getProfileById(profiles, result?.profileId || result?.matchedProfileId)
       const matchedName =
         matchedProfile?.name || result?.name || result?.matchedName || 'Unknown user'
-      const details = [confidenceText && `Confidence score: ${confidenceText}`, result?.message]
+      const statusText = isMatch ? `Match: ${matchedName}` : 'Match: No match'
+      const details = [confidenceText && `Confidence: ${confidenceText}`, result?.message]
         .filter(Boolean)
         .join(' ')
 
-      setRecognitionResult(`Welcome ${matchedName}.${details ? ` ${details}` : ''}`)
+      setRecognitionResult(`${statusText}.${details ? ` ${details}` : ''}`)
     } catch (error) {
       setRecognitionResult(`Recognition request failed. ${error.message || 'Backend request failed.'}`)
     } finally {
@@ -612,6 +748,8 @@ function App() {
   }
 
   const targetProfile = getProfileById(profiles, attackTargetId)
+  const selectedRecognitionProfile = getProfileById(profiles, recognizedProfileId)
+  const activeOverview = overviewContent[activeTab]
   const attackPreviewImage = attackOutputImage || attackNoiseImage || ''
   const attackConfidenceLabel = attackConfidence
     ? `${attackConfidence} match confidence for ${targetProfile?.name || 'the selected user'}`
@@ -651,12 +789,12 @@ function App() {
 
         <section className="hero">
           <p className="hero-text">
-            The frontend now targets Vercel serverless API routes that can persist profiles into a
-            Neon Postgres database at deploy time. Until a database is configured, the UI falls back
-            to local demo profiles for presentation.
+            This interface supports face registration, recognition testing, FGSM attack demos, and
+            basic admin management from one deployment.
           </p>
-          <p className="hero-text">{apiStatus}</p>
         </section>
+
+        <canvas ref={canvasRef} className="hidden" />
 
         <main className="panel">
           {activeTab === 'register' && (
@@ -689,8 +827,6 @@ function App() {
                     </div>
                   )}
                 </div>
-
-                <canvas ref={canvasRef} className="hidden" />
 
                 <div className="capture-guide">
                   <div className="capture-step">
@@ -752,12 +888,6 @@ function App() {
                 </button>
 
                 <p className="status-text">{registerMessage}</p>
-                <div className="camera-diagnostics">
-                  <span>API base URL: {API_BASE_URL || 'same origin'}</span>
-                  <span>Secure context: {window.isSecureContext ? 'yes' : 'no'}</span>
-                  <span>Camera API: {navigator.mediaDevices?.getUserMedia ? 'available' : 'missing'}</span>
-                  {cameraError && <span>Error: {cameraError}</span>}
-                </div>
               </div>
 
               <div className="section-card preview-card">
@@ -863,26 +993,42 @@ function App() {
                 >
                   {isRecognizing ? 'Running...' : 'Run Recognition'}
                 </button>
-
-                <div className="result-banner success">
-                  {recognitionResult || 'Recognition result will appear here.'}
-                </div>
               </div>
 
               <div className="section-card preview-card">
                 <div className="section-heading">
                   <p className="section-kicker">Inference Input</p>
-                  <h2>Input sample</h2>
+                  <h2>Test image and enrolled profile</h2>
                 </div>
 
-                <div className="face-preview large">
-                  {recognitionImage ? (
-                    <img src={recognitionImage} alt="Recognition input preview" />
-                  ) : recognitionCameraVisible ? (
-                    <div className="empty-state">Live camera preview is active in the left panel.</div>
-                  ) : (
-                    <div className="empty-state">Capture or upload an image to preview the recognition test.</div>
-                  )}
+                <div className="recognition-preview-grid">
+                  <div className="recognition-preview-card">
+                    <p className="attack-stage-label attack-stage-heading">Uploaded photo</p>
+                    <div className="face-preview recognition-square">
+                      {recognitionImage ? (
+                        <img src={recognitionImage} alt="Recognition input preview" />
+                      ) : recognitionCameraVisible ? (
+                        <div className="empty-state">Live camera preview is active in the left panel.</div>
+                      ) : (
+                        <div className="empty-state">Capture or upload an image to preview the recognition test.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="recognition-preview-card">
+                    <p className="attack-stage-label attack-stage-heading">Enrolled photo</p>
+                    <div className="face-preview recognition-square">
+                      {selectedRecognitionProfile ? (
+                        <img src={selectedRecognitionProfile.image} alt={selectedRecognitionProfile.name} />
+                      ) : (
+                        <div className="empty-state">Choose an enrolled profile.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="result-banner success">
+                  {recognitionResult || 'Recognition result will appear here.'}
                 </div>
               </div>
             </section>
@@ -978,6 +1124,14 @@ function App() {
                     <div className="face-preview attack-square">
                       {attackImage ? (
                         <img src={attackImage} alt="Attack source preview" />
+                      ) : cameraReady && cameraView === 'attack' ? (
+                        <video
+                          ref={attackPreviewVideoRef}
+                          autoPlay
+                          muted
+                          playsInline
+                          className="camera-video"
+                        />
                       ) : (
                         <div className="empty-state">Upload an attack image.</div>
                       )}
@@ -1018,8 +1172,8 @@ function App() {
                 </div>
 
                 <p className="section-copy">
-                  This admin account is currently hard coded in the client for capstone use. Replace
-                  it with a proper auth flow before using it outside a controlled demo environment.
+                  Use the configured admin credentials to manage enrolled users and remove records
+                  from the system when needed.
                 </p>
 
                 {!isAdminAuthenticated ? (
@@ -1030,7 +1184,7 @@ function App() {
                         type="text"
                         value={adminUsername}
                         onChange={(event) => setAdminUsername(event.target.value)}
-                        placeholder="Configured in Vercel"
+                        placeholder="Configured on the server"
                       />
                     </label>
 
@@ -1040,7 +1194,7 @@ function App() {
                         type="password"
                         value={adminPassword}
                         onChange={(event) => setAdminPassword(event.target.value)}
-                        placeholder="Configured in Vercel"
+                        placeholder="Configured on the server"
                       />
                     </label>
 
@@ -1051,7 +1205,6 @@ function App() {
                 ) : (
                   <div className="admin-actions">
                     <div className="admin-credentials">
-                      <strong>Authenticated as hard-coded admin</strong>
                       <strong>Authenticated with server-side admin credentials</strong>
                       <button
                         type="button"
@@ -1094,106 +1247,35 @@ function App() {
 
                 <div className="result-banner warning">{adminMessage}</div>
               </div>
+            </section>
+          )}
 
+          {activeOverview && (
+            <section className="about-grid footer-section">
               <div className="section-card">
                 <div className="section-heading">
-                  <p className="section-kicker">Backend</p>
-                  <h2>Vercel and Neon setup</h2>
+                  <p className="section-kicker">Overview</p>
+                  <h2>{activeOverview.heading}</h2>
                 </div>
 
-                <div className="integration-list">
-                  <div className="integration-item">
-                    <span>DB</span>
-                    <p>
-                      Set <code>DATABASE_URL</code> in Vercel using your Neon connection string. The
-                      serverless functions auto-create the profiles table on first use.
-                    </p>
-                  </div>
-                  <div className="integration-item">
-                    <span>AUTH</span>
-                    <p>
-                      Set <code>ADMIN_USERNAME</code> and <code>ADMIN_PASSWORD</code> in Vercel to
-                      control the admin login and delete actions.
-                    </p>
-                  </div>
-                  <div className="integration-item">
-                    <span>GET</span>
-                    <p><code>/api/profiles</code> returns the enrolled users from Neon.</p>
-                  </div>
-                  <div className="integration-item">
-                    <span>POST</span>
-                    <p><code>/api/profiles</code> stores a new user with the captured face set.</p>
-                  </div>
-                  <div className="integration-item">
-                    <span>DEL</span>
-                    <p><code>/api/profiles/:id</code> removes a registered user for the admin page.</p>
-                  </div>
+                <p className="section-copy">{activeOverview.copy}</p>
+
+                <div className="overview-cards">
+                  {activeOverview.cards.map((card) => (
+                    <article className="overview-card" key={card.title}>
+                      <div className="overview-image">
+                        <img src={card.image} alt={card.title} />
+                      </div>
+                      <div className="overview-copy">
+                        <strong>{card.title}</strong>
+                        <p>{card.description}</p>
+                      </div>
+                    </article>
+                  ))}
                 </div>
               </div>
             </section>
           )}
-
-          <section className="about-grid footer-section">
-            <div className="section-card">
-              <div className="section-heading">
-                <p className="section-kicker">Overview</p>
-                <h2>What this site is demonstrating</h2>
-              </div>
-
-              <p className="section-copy">
-                The capstone flow is split into registration, recognition, adversarial attack, and
-                admin management so viewers can compare normal authentication against attack behavior
-                and simple operational controls.
-              </p>
-
-              <div className="about-points">
-                <div>
-                  <strong>Normal path</strong>
-                  <p>User face is enrolled and later recognized for authentication.</p>
-                </div>
-                <div>
-                  <strong>Attack path</strong>
-                  <p>
-                    An adversarially perturbed image steers the classifier toward a different
-                    enrolled identity.
-                  </p>
-                </div>
-                <div>
-                  <strong>Persistence</strong>
-                  <p>
-                    Vercel serverless routes can now persist profiles in Neon rather than relying on
-                    in-memory demo data only.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="section-card">
-              <div className="section-heading">
-                <p className="section-kicker">Integration</p>
-                <h2>Required backend endpoints</h2>
-              </div>
-
-              <div className="integration-list">
-                <div className="integration-item">
-                  <span>GET</span>
-                  <p><code>/api/profiles</code> returns the enrolled profile list used by the dropdowns and database panel.</p>
-                </div>
-                <div className="integration-item">
-                  <span>POST</span>
-                  <p><code>/api/profiles</code> accepts <code>{'{ name, captures }'}</code> and returns the saved profile record.</p>
-                </div>
-                <div className="integration-item">
-                  <span>POST</span>
-                  <p><code>/api/recognitions</code> accepts <code>{'{ image, selectedProfileId }'}</code> and returns a matched profile plus confidence.</p>
-                </div>
-                <div className="integration-item">
-                  <span>POST</span>
-                  <p><code>/api/attacks/fgsm</code> accepts <code>{'{ image, targetProfileId, epsilon }'}</code> and returns attack outputs.</p>
-                </div>
-              </div>
-            </div>
-          </section>
         </main>
       </div>
       <Analytics />
