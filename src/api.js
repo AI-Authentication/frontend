@@ -3,6 +3,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, ''
 const endpoints = {
   health: '/api/health',
   profiles: '/api/profiles',
+  adminLogin: '/api/admin/login',
   recognition: '/api/recognitions',
   fgsmAttack: '/api/attacks/fgsm',
 }
@@ -43,6 +44,7 @@ function pickProfileImage(profile) {
     profile.thumbnailUrl ||
     profile.previewImage ||
     profile.photos?.[0] ||
+    profile.captures?.front ||
     ''
   )
 }
@@ -78,10 +80,35 @@ export async function createProfile({ name, captures }) {
   return normalizeProfile(payload?.profile || payload)
 }
 
-export async function recognizeFace({ image }) {
+function buildAdminHeaders(credentials) {
+  if (!credentials?.username || !credentials?.password) {
+    return {}
+  }
+
+  const token = btoa(`${credentials.username}:${credentials.password}`)
+  return {
+    Authorization: `Basic ${token}`,
+  }
+}
+
+export async function adminLogin(credentials) {
+  return request(endpoints.adminLogin, {
+    method: 'POST',
+    headers: buildAdminHeaders(credentials),
+  })
+}
+
+export async function deleteProfile(profileId, credentials) {
+  return request(`${endpoints.profiles}/${profileId}`, {
+    method: 'DELETE',
+    headers: buildAdminHeaders(credentials),
+  })
+}
+
+export async function recognizeFace({ image, selectedProfileId }) {
   return request(endpoints.recognition, {
     method: 'POST',
-    body: JSON.stringify({ image }),
+    body: JSON.stringify({ image, selectedProfileId }),
   })
 }
 

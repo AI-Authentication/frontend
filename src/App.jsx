@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { API_BASE_URL, createProfile, listProfiles, recognizeFace, runFgsmAttack } from './api'
+import {
+  API_BASE_URL,
+  adminLogin,
+  createProfile,
+  deleteProfile,
+  listProfiles,
+  recognizeFace,
+  runFgsmAttack,
+} from './api'
 import { Analytics } from '@vercel/analytics/react'
 
 const tabs = [
   { id: 'register', label: 'Register Face' },
   { id: 'recognize', label: 'Recognition Test' },
   { id: 'attack', label: 'FGSM Attack Demo' },
+  { id: 'admin', label: 'Admin' },
 ]
 
 const capturePrompts = [
@@ -43,6 +52,15 @@ function formatConfidence(confidence) {
   return `${value.toFixed(1)}%`
 }
 
+function readSingleImageFile(event, setter) {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  const reader = new FileReader()
+  reader.onload = () => setter(String(reader.result))
+  reader.readAsDataURL(file)
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('register')
   const [profiles, setProfiles] = useState(seedProfiles)
@@ -53,25 +71,56 @@ function App() {
   const [cameraReady, setCameraReady] = useState(false)
   const [cameraState, setCameraState] = useState('idle')
   const [cameraError, setCameraError] = useState('')
+  const [cameraView, setCameraView] = useState(null)
   const [registerMessage, setRegisterMessage] = useState(
-    'Capture or upload a face to add a profile, then save it through the API.',
+    'Capture five guided face photos, then save the profile through the API.',
   )
+  const [recognitionMode, setRecognitionMode] = useState('upload')
   const [recognitionImage, setRecognitionImage] = useState('')
   const [recognizedProfileId, setRecognizedProfileId] = useState(String(seedProfiles[0].id))
   const [recognitionResult, setRecognitionResult] = useState('')
   const [attackImage, setAttackImage] = useState('')
   const [attackTargetId, setAttackTargetId] = useState(String(seedProfiles[1].id))
   const [attackStrength, setAttackStrength] = useState(12)
-  const [attackResult, setAttackResult] = useState('Upload an input image to simulate the adversarial example.')
+  const [attackResult, setAttackResult] = useState(
+    'Use a captured face image to simulate the adversarial example.',
+  )
   const [attackNoiseImage, setAttackNoiseImage] = useState('')
   const [attackOutputImage, setAttackOutputImage] = useState('')
   const [apiStatus, setApiStatus] = useState('Loading profiles from the backend.')
   const [isRegistering, setIsRegistering] = useState(false)
   const [isRecognizing, setIsRecognizing] = useState(false)
   const [isRunningAttack, setIsRunningAttack] = useState(false)
-  const videoRef = useRef(null)
+  const [isDeletingProfile, setIsDeletingProfile] = useState(false)
+  const [adminUsername, setAdminUsername] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
+  const [adminCredentials, setAdminCredentials] = useState(null)
+  const [adminMessage, setAdminMessage] = useState('Use the admin login to manage enrolled users.')
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
+  const registerVideoRef = useRef(null)
+  const recognitionVideoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
+
+  function stopCamera() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+
+    if (registerVideoRef.current) {
+      registerVideoRef.current.srcObject = null
+    }
+
+    if (recognitionVideoRef.current) {
+      recognitionVideoRef.current.srcObject = null
+    }
+
+    setCameraReady(false)
+    setCameraState('idle')
+    setCameraView(null)
+    setCameraError('')
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -98,6 +147,7 @@ function App() {
 
     return () => {
       cancelled = true
+      stopCamera()
     }
   }, [])
 
@@ -114,23 +164,21 @@ function App() {
   }, [profiles, recognizedProfileId, attackTargetId])
 
   useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop())
-        streamRef.current = null
-      }
-      setCameraReady(false)
-      if (activeTab !== 'register') {
-        setCameraState('idle')
-      }
+    stopCamera()
+    if (activeTab !== 'recognize') {
+      setRecognitionMode('upload')
     }
   }, [activeTab])
 
-  async function startCamera() {
+  async function startCamera(view) {
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraState('unsupported')
       setCameraError('`navigator.mediaDevices.getUserMedia` is unavailable in this browser.')
-      setRegisterMessage('This browser does not support direct camera capture. Use image upload.')
+      if (view === 'register') {
+        setRegisterMessage('This browser does not support direct camera capture.')
+      } else {
+        setRecognitionResult('This browser does not support direct camera capture.')
+      }
       return
     }
 
@@ -139,17 +187,17 @@ function App() {
       setCameraError(
         'Camera access requires a secure origin. Use `http://localhost` or `https://` instead of a raw local IP or file URL.',
       )
-      setRegisterMessage('Camera access is blocked because this page is not running in a secure context.')
+      if (view === 'register') {
+        setRegisterMessage('Camera access is blocked because this page is not running in a secure context.')
+      } else {
+        setRecognitionResult('Camera access is blocked because this page is not running in a secure context.')
+      }
       return
     }
 
     try {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop())
-      }
-
+      stopCamera()
       setCameraState('loading')
-      setCameraError('')
 
       let stream
       try {
@@ -169,71 +217,46 @@ function App() {
       }
 
       streamRef.current = stream
+      setCameraView(view)
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play().catch(() => {})
+      const targetVideo = view === 'register' ? registerVideoRef.current : recognitionVideoRef.current
+      if (targetVideo) {
+        targetVideo.srcObject = stream
+        await targetVideo.play().catch(() => {})
       }
 
       setCameraReady(true)
       setCameraState('ready')
-      setRegisterMessage('Camera is live. Capture all five guided poses or upload them instead.')
+      if (view === 'register') {
+        setRegisterMessage('Camera is live. Capture all five guided poses to finish registration.')
+      } else {
+        setRecognitionResult('Camera is live. Capture a test face when you are ready.')
+      }
     } catch (error) {
       setCameraReady(false)
       setCameraState('error')
       setCameraError(`${error?.name || 'UnknownError'}: ${error?.message || 'Camera request failed.'}`)
-      setRegisterMessage(
+      const errorMessage =
         error?.name === 'NotAllowedError'
-          ? 'Camera permission was blocked. Check the browser site settings, allow camera access, and retry.'
+          ? 'Camera permission was blocked. Check the browser site settings and retry.'
           : error?.name === 'NotFoundError'
             ? 'No camera device was found on this machine.'
             : error?.name === 'NotReadableError'
               ? 'The camera is already in use by another application.'
-              : 'Camera could not be started. Retry or use image upload instead.',
-      )
+              : 'Camera could not be started. Retry and confirm browser camera access.'
+
+      if (view === 'register') {
+        setRegisterMessage(errorMessage)
+      } else {
+        setRecognitionResult(errorMessage)
+      }
     }
   }
 
-  function readImageFile(event, setter) {
-    const files = Array.from(event.target.files || [])
-    if (files.length === 0) return
-
-    if (files.length === 1) {
-      const reader = new FileReader()
-      reader.onload = () => setter(String(reader.result))
-      reader.readAsDataURL(files[0])
-      return
-    }
-
-    Promise.all(
-      files.slice(0, capturePrompts.length).map(
-        (file) =>
-          new Promise((resolve) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(String(reader.result))
-            reader.readAsDataURL(file)
-          }),
-      ),
-    ).then((images) => {
-      const nextShots = {}
-      images.forEach((image, index) => {
-        nextShots[capturePrompts[index].id] = image
-      })
-      setCapturedShots(nextShots)
-      setCapturedImage(nextShots.front || '')
-      setCaptureStep(Math.min(images.length, capturePrompts.length - 1))
-      setRegisterMessage(
-        images.length === capturePrompts.length
-          ? 'Five images loaded. Add a name and save the user.'
-          : `Loaded ${images.length} image(s). ${capturePrompts[images.length]?.label || 'Continue capturing.'}`,
-      )
-    })
-  }
-
-  function captureFromCamera() {
-    const video = videoRef.current
+  function captureRegisterFromCamera() {
+    const video = registerVideoRef.current
     const canvas = canvasRef.current
-    if (!video || !canvas || !cameraReady) {
+    if (!video || !canvas || !cameraReady || cameraView !== 'register') {
       setRegisterMessage('Start the camera first, then capture a photo.')
       return
     }
@@ -259,6 +282,23 @@ function App() {
     }
 
     setRegisterMessage('All five photos captured. Add a name and save the user.')
+  }
+
+  function captureRecognitionFromCamera() {
+    const video = recognitionVideoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || !cameraReady || cameraView !== 'recognize') {
+      setRecognitionResult('Start the camera first, then capture a test face.')
+      return
+    }
+
+    canvas.width = video.videoWidth || 960
+    canvas.height = video.videoHeight || 720
+    const context = canvas.getContext('2d')
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const nextImage = canvas.toDataURL('image/jpeg', 0.92)
+    setRecognitionImage(nextImage)
+    setRecognitionResult('Captured a test face from the live camera preview.')
   }
 
   async function registerProfile() {
@@ -297,7 +337,7 @@ function App() {
 
   async function runRecognitionDemo() {
     if (!recognitionImage) {
-      setRecognitionResult('Upload a face image to test recognition.')
+      setRecognitionResult('Capture or upload a face image to test recognition.')
       return
     }
 
@@ -305,7 +345,10 @@ function App() {
     setRecognitionResult('Running recognition request.')
 
     try {
-      const result = await recognizeFace({ image: recognitionImage })
+      const result = await recognizeFace({
+        image: recognitionImage,
+        selectedProfileId: recognizedProfileId,
+      })
       const confidenceText = formatConfidence(result?.confidence)
       const matchedProfile =
         result?.match || getProfileById(profiles, result?.profileId || result?.matchedProfileId)
@@ -325,7 +368,7 @@ function App() {
 
   async function runAttackDemo() {
     if (!attackImage) {
-      setAttackResult('Upload an input image to simulate the adversarial example.')
+      setAttackResult('Select a captured test face first from the recognition step.')
       return
     }
 
@@ -347,7 +390,7 @@ function App() {
         `FGSM perturbation applied at epsilon ${result?.epsilon || attackStrength}. Model prediction shifted to ${targetName}.`
 
       setAttackNoiseImage(result?.perturbationImage || result?.noiseImage || '')
-      setAttackOutputImage(result?.adversarialImage || '')
+      setAttackOutputImage(result?.adversarialImage || attackImage)
       setAttackResult(summary)
     } catch (error) {
       setAttackNoiseImage('')
@@ -358,11 +401,69 @@ function App() {
     }
   }
 
+  function handleRecognitionUpload(event) {
+    readSingleImageFile(event, (image) => {
+      setRecognitionMode('upload')
+      setRecognitionImage(image)
+      setRecognitionResult('Test face loaded from file.')
+    })
+  }
+
+  function useRecognitionCaptureForAttack() {
+    if (!recognitionImage) {
+      setAttackResult('Capture or upload a recognition test image first.')
+      return
+    }
+
+    setAttackImage(recognitionImage)
+    setAttackOutputImage('')
+    setAttackNoiseImage('')
+    setAttackResult('Using the current recognition test face as the FGSM input image.')
+  }
+
+  async function handleAdminLogin(event) {
+    event.preventDefault()
+
+    try {
+      await adminLogin({
+        username: adminUsername,
+        password: adminPassword,
+      })
+
+      setAdminCredentials({
+        username: adminUsername,
+        password: adminPassword,
+      })
+      setIsAdminAuthenticated(true)
+      setAdminMessage('Admin authenticated through server-side environment variables.')
+    } catch (error) {
+      setAdminCredentials(null)
+      setIsAdminAuthenticated(false)
+      setAdminMessage(error.message || 'Invalid admin credentials.')
+    }
+  }
+
+  async function handleDeleteProfile(profileId) {
+    setIsDeletingProfile(true)
+    setAdminMessage('Removing profile from the database.')
+
+    try {
+      await deleteProfile(profileId, adminCredentials)
+      setProfiles((current) => current.filter((profile) => String(profile.id) !== String(profileId)))
+      setAdminMessage('Profile removed successfully.')
+    } catch (error) {
+      setAdminMessage(`Delete failed. ${error.message || 'Backend request failed.'}`)
+    } finally {
+      setIsDeletingProfile(false)
+    }
+  }
+
   const targetProfile = getProfileById(profiles, attackTargetId)
   const noiseOpacity = Math.min(0.18 + attackStrength / 64, 0.6)
   const currentPrompt = capturePrompts[captureStep]
   const completedShots = Object.keys(capturedShots).length
   const registrationReady = completedShots === capturePrompts.length
+  const recognitionCameraVisible = recognitionMode === 'camera'
   const noiseStyle = attackNoiseImage
     ? { backgroundImage: `url(${attackNoiseImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }
     : {
@@ -375,440 +476,578 @@ function App() {
 
   return (
     <>
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand-block">
-          <p className="hero-label">Face Authentication Capstone</p>
-          <h1>Registration, recognition, and attack testing</h1>
-        </div>
+      <div className="app-shell">
+        <header className="topbar">
+          <div className="brand-block">
+            <p className="hero-label">Face Authentication Capstone</p>
+            <h1>Registration, recognition, attack testing, and admin control</h1>
+          </div>
 
-        <nav className="tab-bar" aria-label="Sections">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={tab.id === activeTab ? 'tab active' : 'tab'}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </header>
+          <nav className="tab-bar" aria-label="Sections">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={tab.id === activeTab ? 'tab active' : 'tab'}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </header>
 
-      <section className="hero">
-        <p className="hero-text">
-          The interface now calls real API endpoints for registration, recognition, and FGSM
-          attack generation. Until the backend is online, the UI falls back to local demo
-          profiles for presentation only.
-        </p>
-        <p className="hero-text">{apiStatus}</p>
-      </section>
+        <section className="hero">
+          <p className="hero-text">
+            The frontend now targets Vercel serverless API routes that can persist profiles into a
+            Neon Postgres database at deploy time. Until a database is configured, the UI falls back
+            to local demo profiles for presentation.
+          </p>
+          <p className="hero-text">{apiStatus}</p>
+        </section>
 
-      <main className="panel">
-        {activeTab === 'register' && (
-          <section className="content-grid content-section">
-            <div className="section-card">
-              <div className="section-heading">
-                <p className="section-kicker">Registration</p>
-                <h2>Register a user face</h2>
-              </div>
-
-              <p className="section-copy">
-                Capture five guided images for each user: straight on, look left, look right,
-                eyebrows up, and head down. The backend receives all five images as base64 data
-                and persists the enrolled profile.
-              </p>
-
-              <div className="camera-frame">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  className={cameraReady ? 'camera-video' : 'camera-video hidden'}
-                />
-                {!cameraReady && (
-                  <div className="camera-fallback">
-                    {cameraState === 'loading'
-                      ? 'Starting camera...'
-                      : 'Camera is off. Start it here or use image upload instead.'}
-                  </div>
-                )}
-              </div>
-
-              <canvas ref={canvasRef} className="hidden" />
-
-              <div className="capture-guide">
-                <div className="capture-step">
-                  <span className="guide-count">
-                    {Math.min(completedShots + (completedShots === capturePrompts.length ? 0 : 1), 5)} / 5
-                  </span>
-                  <strong>{currentPrompt?.label || 'Complete'}</strong>
+        <main className="panel">
+          {activeTab === 'register' && (
+            <section className="content-grid content-section">
+              <div className="section-card">
+                <div className="section-heading">
+                  <p className="section-kicker">Registration</p>
+                  <h2>Register a user face</h2>
                 </div>
-                <div className="guide-list">
-                  {capturePrompts.map((prompt, index) => (
-                    <div
-                      key={prompt.id}
-                      className={
-                        capturedShots[prompt.id]
-                          ? 'guide-item done'
-                          : index === captureStep
-                            ? 'guide-item active'
-                            : 'guide-item'
-                      }
-                    >
-                      {prompt.label}
+
+                <p className="section-copy">
+                  Capture five guided images for each user: straight on, look left, look right,
+                  eyebrows up, and head down. The backend receives all five images as base64 data
+                  and persists the enrolled profile to Neon.
+                </p>
+
+                <div className="camera-frame">
+                  <video
+                    ref={registerVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className={cameraReady && cameraView === 'register' ? 'camera-video' : 'camera-video hidden'}
+                  />
+                  {(!cameraReady || cameraView !== 'register') && (
+                    <div className="camera-fallback">
+                      {cameraState === 'loading'
+                        ? 'Starting camera...'
+                        : 'Camera is off. Start it here and capture the five required registration poses.'}
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
 
-              <div className="actions">
-                <button
-                  type="button"
-                  className={
-                    registrationReady
-                      ? 'secondary-button compact-button capture-button complete'
-                      : 'primary-button compact-button capture-button'
-                  }
-                  onClick={cameraState === 'ready' ? captureFromCamera : startCamera}
-                  disabled={registrationReady || isRegistering}
-                >
-                  {cameraState === 'ready' ? 'Capture Photo' : 'Start'}
-                </button>
-                <label className="secondary-button icon-button" title="Upload photos">
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                <canvas ref={canvasRef} className="hidden" />
+
+                <div className="capture-guide">
+                  <div className="capture-step">
+                    <span className="guide-count">
+                      {Math.min(completedShots + (completedShots === capturePrompts.length ? 0 : 1), 5)} / 5
+                    </span>
+                    <strong>{currentPrompt?.label || 'Complete'}</strong>
+                  </div>
+                  <div className="guide-list">
+                    {capturePrompts.map((prompt, index) => (
+                      <div
+                        key={prompt.id}
+                        className={
+                          capturedShots[prompt.id]
+                            ? 'guide-item done'
+                            : index === captureStep
+                              ? 'guide-item active'
+                              : 'guide-item'
+                        }
+                      >
+                        {prompt.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="actions single-row-actions">
+                  <button
+                    type="button"
+                    className={
+                      registrationReady
+                        ? 'secondary-button compact-button complete'
+                        : 'primary-button compact-button'
+                    }
+                    onClick={cameraState === 'ready' && cameraView === 'register' ? captureRegisterFromCamera : () => startCamera('register')}
+                    disabled={registrationReady || isRegistering}
                   >
-                    <path d="M12 16V4" />
-                    <path d="m7 9 5-5 5 5" />
-                    <path d="M20 16.5v2a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-2" />
-                  </svg>
+                    {cameraState === 'ready' && cameraView === 'register' ? 'Capture Photo' : 'Start Camera'}
+                  </button>
+                </div>
+
+                <label className="field">
+                  <span>Profile name</span>
                   <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    capture="user"
-                    onChange={(event) => readImageFile(event, setCapturedImage)}
+                    type="text"
+                    value={captureName}
+                    onChange={(event) => setCaptureName(event.target.value)}
+                    placeholder="Enter a user name"
                   />
                 </label>
-              </div>
 
-              <label className="field">
-                <span>Profile name</span>
-                <input
-                  type="text"
-                  value={captureName}
-                  onChange={(event) => setCaptureName(event.target.value)}
-                  placeholder="Enter a user name"
-                />
-              </label>
-
-              <button
-                type="button"
-                className={registrationReady ? 'primary-button wide' : 'primary-button wide disabled-button'}
-                onClick={registerProfile}
-                disabled={!registrationReady || isRegistering}
-              >
-                {isRegistering ? 'Saving...' : 'Save To Database'}
-              </button>
-
-              <p className="status-text">{registerMessage}</p>
-              <div className="camera-diagnostics">
-                <span>API base URL: {API_BASE_URL || 'same origin'}</span>
-                <span>Secure context: {window.isSecureContext ? 'yes' : 'no'}</span>
-                <span>Camera API: {navigator.mediaDevices?.getUserMedia ? 'available' : 'missing'}</span>
-                {cameraError && <span>Error: {cameraError}</span>}
-              </div>
-            </div>
-
-            <div className="section-card preview-card">
-              <div className="section-heading">
-                <p className="section-kicker">Stored Profiles</p>
-                <h2>Captured face and enrolled users</h2>
-              </div>
-
-              <div className="face-preview large">
-                {capturedImage ? (
-                  <img src={capturedImage} alt="Captured profile preview" />
-                ) : (
-                  <div className="empty-state">No face image selected yet.</div>
-                )}
-              </div>
-
-              <div className="database-list">
-                <div className="list-header">
-                  <h3>Profile database</h3>
-                  <span>{profiles.length} users</span>
-                </div>
-
-                {profiles.map((profile) => (
-                  <div className="profile-row" key={profile.id}>
-                    <img src={profile.image} alt={profile.name} />
-                    <div>
-                      <strong>{profile.name}</strong>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'recognize' && (
-          <section className="content-grid content-section">
-            <div className="section-card">
-              <div className="section-heading">
-                <p className="section-kicker">Recognition</p>
-                <h2>Recognition test</h2>
-              </div>
-
-              <p className="section-copy">
-                Upload a face image and send it to the recognition endpoint. The API should
-                return the matched profile plus a confidence score.
-              </p>
-
-              <label className="secondary-button">
-                Upload Test Face
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => readImageFile(event, setRecognitionImage)}
-                />
-              </label>
-
-              <label className="field">
-                <span>Selected enrolled profile</span>
-                <select
-                  value={recognizedProfileId}
-                  onChange={(event) => setRecognizedProfileId(event.target.value)}
+                <button
+                  type="button"
+                  className={registrationReady ? 'primary-button wide' : 'primary-button wide disabled-button'}
+                  onClick={registerProfile}
+                  disabled={!registrationReady || isRegistering}
                 >
+                  {isRegistering ? 'Saving...' : 'Save To Database'}
+                </button>
+
+                <p className="status-text">{registerMessage}</p>
+                <div className="camera-diagnostics">
+                  <span>API base URL: {API_BASE_URL || 'same origin'}</span>
+                  <span>Secure context: {window.isSecureContext ? 'yes' : 'no'}</span>
+                  <span>Camera API: {navigator.mediaDevices?.getUserMedia ? 'available' : 'missing'}</span>
+                  {cameraError && <span>Error: {cameraError}</span>}
+                </div>
+              </div>
+
+              <div className="section-card preview-card">
+                <div className="section-heading">
+                  <p className="section-kicker">Stored Profiles</p>
+                  <h2>Captured face and enrolled users</h2>
+                </div>
+
+                <div className="face-preview large">
+                  {capturedImage ? (
+                    <img src={capturedImage} alt="Captured profile preview" />
+                  ) : (
+                    <div className="empty-state">No face image captured yet.</div>
+                  )}
+                </div>
+
+                <div className="database-list">
+                  <div className="list-header">
+                    <h3>Profile database</h3>
+                    <span>{profiles.length} users</span>
+                  </div>
+
                   {profiles.map((profile) => (
-                    <option key={profile.id} value={String(profile.id)}>
-                      {profile.name}
-                    </option>
+                    <div className="profile-row" key={profile.id}>
+                      <img src={profile.image} alt={profile.name} />
+                      <div>
+                        <strong>{profile.name}</strong>
+                      </div>
+                    </div>
                   ))}
-                </select>
-              </label>
-
-              <button
-                type="button"
-                className="primary-button wide"
-                onClick={runRecognitionDemo}
-                disabled={isRecognizing}
-              >
-                {isRecognizing ? 'Running...' : 'Run Recognition'}
-              </button>
-
-              <div className="result-banner success">
-                {recognitionResult || 'Recognition result will appear here.'}
+                </div>
               </div>
-            </div>
+            </section>
+          )}
 
-            <div className="section-card preview-card">
-              <div className="section-heading">
-                <p className="section-kicker">Inference Input</p>
-                <h2>Input sample</h2>
-              </div>
+          {activeTab === 'recognize' && (
+            <section className="content-grid content-section">
+              <div className="section-card">
+                <div className="section-heading">
+                  <p className="section-kicker">Recognition</p>
+                  <h2>Recognition test</h2>
+                </div>
 
-              <div className="face-preview large">
-                {recognitionImage ? (
-                  <img src={recognitionImage} alt="Recognition input preview" />
-                ) : (
-                  <div className="empty-state">Upload an image to preview the recognition test.</div>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
+                <p className="section-copy">
+                  Use an uploaded image or live camera capture and send it to the recognition
+                  endpoint. The API returns the matched profile plus a confidence score.
+                </p>
 
-        {activeTab === 'attack' && (
-          <section className="content-grid attack-layout content-section">
-            <div className="section-card">
-              <div className="section-heading">
-                <p className="section-kicker">Adversarial Attack</p>
-                <h2>FGSM attack showcase</h2>
-              </div>
+                <div className="inline-actions">
+                  <label className="secondary-button">
+                    Upload Test Face
+                    <input type="file" accept="image/*" onChange={handleRecognitionUpload} />
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      setRecognitionMode('camera')
+                      startCamera('recognize')
+                    }}
+                  >
+                    Take Photo
+                  </button>
+                  {recognitionCameraVisible && (
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={captureRecognitionFromCamera}
+                      disabled={cameraState !== 'ready' || cameraView !== 'recognize'}
+                    >
+                      Capture Test Face
+                    </button>
+                  )}
+                </div>
 
-              <p className="section-copy">
-                Upload an image and send it to the FGSM endpoint with a target profile and
-                epsilon value. The backend can optionally return the perturbation map and the
-                adversarial output image.
-              </p>
-
-              <label className="secondary-button">
-                Upload Attack Image
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => readImageFile(event, setAttackImage)}
-                />
-              </label>
-
-              <label className="field">
-                <span>Target impersonation profile</span>
-                <select value={attackTargetId} onChange={(event) => setAttackTargetId(event.target.value)}>
-                  {profiles.map((profile) => (
-                    <option key={profile.id} value={String(profile.id)}>
-                      {profile.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="field">
-                <span>FGSM epsilon strength</span>
-                <input
-                  type="range"
-                  min="1"
-                  max="32"
-                  value={attackStrength}
-                  onChange={(event) => setAttackStrength(Number(event.target.value))}
-                />
-              </label>
-
-              <div className="metric-row">
-                <span>Low perturbation</span>
-                <strong>{attackStrength}</strong>
-                <span>High perturbation</span>
-              </div>
-
-              <button
-                type="button"
-                className="primary-button wide"
-                onClick={runAttackDemo}
-                disabled={isRunningAttack}
-              >
-                {isRunningAttack ? 'Running...' : 'Run FGSM Attack'}
-              </button>
-
-              <div className="result-banner warning">{attackResult}</div>
-            </div>
-
-            <div className="section-card preview-card">
-              <div className="section-heading">
-                <p className="section-kicker">Attack Mapping</p>
-                <h2>Source, perturbation, and target</h2>
-              </div>
-
-              <div className="attack-preview">
-                <div className="attack-stage">
-                  <p className="attack-stage-label">Input face</p>
-                  <div className="face-preview">
-                    {attackImage ? (
-                      <img src={attackImage} alt="Attack source preview" />
-                    ) : (
-                      <div className="empty-state">Source face image</div>
+                {recognitionCameraVisible && (
+                  <div className="camera-frame inline-camera-frame">
+                    <video
+                      ref={recognitionVideoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      className={
+                        cameraReady && cameraView === 'recognize' ? 'camera-video' : 'camera-video hidden'
+                      }
+                    />
+                    {(!cameraReady || cameraView !== 'recognize') && (
+                      <div className="camera-fallback">
+                        {cameraState === 'loading'
+                          ? 'Starting camera...'
+                          : 'Camera preview appears here after camera access is granted.'}
+                      </div>
                     )}
                   </div>
+                )}
+
+                <label className="field">
+                  <span>Selected enrolled profile</span>
+                  <select
+                    value={recognizedProfileId}
+                    onChange={(event) => setRecognizedProfileId(event.target.value)}
+                  >
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={String(profile.id)}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  className="primary-button wide"
+                  onClick={runRecognitionDemo}
+                  disabled={isRecognizing}
+                >
+                  {isRecognizing ? 'Running...' : 'Run Recognition'}
+                </button>
+
+                <div className="result-banner success">
+                  {recognitionResult || 'Recognition result will appear here.'}
+                </div>
+              </div>
+
+              <div className="section-card preview-card">
+                <div className="section-heading">
+                  <p className="section-kicker">Inference Input</p>
+                  <h2>Input sample</h2>
                 </div>
 
-                <div className="attack-connector">
-                  <span>FGSM</span>
+                <div className="face-preview large">
+                  {recognitionImage ? (
+                    <img src={recognitionImage} alt="Recognition input preview" />
+                  ) : recognitionCameraVisible ? (
+                    <div className="empty-state">Live camera preview is active in the left panel.</div>
+                  ) : (
+                    <div className="empty-state">Capture or upload an image to preview the recognition test.</div>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {activeTab === 'attack' && (
+            <section className="content-grid attack-layout content-section">
+              <div className="section-card">
+                <div className="section-heading">
+                  <p className="section-kicker">Adversarial Attack</p>
+                  <h2>FGSM attack showcase</h2>
                 </div>
 
-                <div className="attack-stage">
-                  <p className="attack-stage-label">Raw perturbation</p>
-                  <div className="face-preview noise-box" style={noiseStyle}>
-                    <div className="noise-label">
-                      <strong>{attackNoiseImage ? 'Backend output' : 'Raw noise'}</strong>
-                      <span>Epsilon {attackStrength}</span>
+                <p className="section-copy">
+                  The attack demo now reuses the most recent captured or uploaded recognition face
+                  instead of accepting a separate upload. Send it to the FGSM endpoint with a target
+                  profile and epsilon value.
+                </p>
+
+                <button type="button" className="secondary-button wide" onClick={useRecognitionCaptureForAttack}>
+                  Use Recognition Test Face
+                </button>
+
+                <label className="field">
+                  <span>Target impersonation profile</span>
+                  <select value={attackTargetId} onChange={(event) => setAttackTargetId(event.target.value)}>
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={String(profile.id)}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>FGSM epsilon strength</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="32"
+                    value={attackStrength}
+                    onChange={(event) => setAttackStrength(Number(event.target.value))}
+                  />
+                </label>
+
+                <div className="metric-row">
+                  <span>Low perturbation</span>
+                  <strong>{attackStrength}</strong>
+                  <span>High perturbation</span>
+                </div>
+
+                <button
+                  type="button"
+                  className="primary-button wide"
+                  onClick={runAttackDemo}
+                  disabled={isRunningAttack}
+                >
+                  {isRunningAttack ? 'Running...' : 'Run FGSM Attack'}
+                </button>
+
+                <div className="result-banner warning">{attackResult}</div>
+              </div>
+
+              <div className="section-card preview-card">
+                <div className="section-heading">
+                  <p className="section-kicker">Attack Mapping</p>
+                  <h2>Source, perturbation, and target</h2>
+                </div>
+
+                <div className="attack-preview">
+                  <div className="attack-stage">
+                    <p className="attack-stage-label">Input face</p>
+                    <div className="face-preview">
+                      {attackImage ? (
+                        <img src={attackImage} alt="Attack source preview" />
+                      ) : (
+                        <div className="empty-state">Recognition test face</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="attack-connector">
+                    <span>FGSM</span>
+                  </div>
+
+                  <div className="attack-stage">
+                    <p className="attack-stage-label">Raw perturbation</p>
+                    <div className="face-preview noise-box" style={noiseStyle}>
+                      <div className="noise-label">
+                        <strong>{attackNoiseImage ? 'Backend output' : 'Raw noise'}</strong>
+                        <span>Epsilon {attackStrength}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="attack-connector">
+                    <span>Add</span>
+                  </div>
+
+                  <div className="attack-stage">
+                    <p className="attack-stage-label">Predicted target</p>
+                    <div className="face-preview">
+                      {attackOutputImage ? (
+                        <img src={attackOutputImage} alt="Adversarial output preview" />
+                      ) : targetProfile ? (
+                        <img src={targetProfile.image} alt={targetProfile.name} />
+                      ) : (
+                        <div className="empty-state">Target user</div>
+                      )}
                     </div>
                   </div>
                 </div>
+              </div>
+            </section>
+          )}
 
-                <div className="attack-connector">
-                  <span>Add</span>
+          {activeTab === 'admin' && (
+            <section className="content-grid content-section">
+              <div className="section-card">
+                <div className="section-heading">
+                  <p className="section-kicker">Admin</p>
+                  <h2>Manage enrolled users</h2>
                 </div>
 
-                <div className="attack-stage">
-                  <p className="attack-stage-label">Predicted target</p>
-                  <div className="face-preview">
-                    {attackOutputImage ? (
-                      <img src={attackOutputImage} alt="Adversarial output preview" />
-                    ) : targetProfile ? (
-                      <img src={targetProfile.image} alt={targetProfile.name} />
-                    ) : (
-                      <div className="empty-state">Target user</div>
-                    )}
+                <p className="section-copy">
+                  This admin account is currently hard coded in the client for capstone use. Replace
+                  it with a proper auth flow before using it outside a controlled demo environment.
+                </p>
+
+                {!isAdminAuthenticated ? (
+                  <form className="admin-form" onSubmit={handleAdminLogin}>
+                    <label className="field">
+                      <span>Username</span>
+                      <input
+                        type="text"
+                        value={adminUsername}
+                        onChange={(event) => setAdminUsername(event.target.value)}
+                        placeholder="Configured in Vercel"
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span>Password</span>
+                      <input
+                        type="password"
+                        value={adminPassword}
+                        onChange={(event) => setAdminPassword(event.target.value)}
+                        placeholder="Configured in Vercel"
+                      />
+                    </label>
+
+                    <button type="submit" className="primary-button wide">
+                      Log In
+                    </button>
+                  </form>
+                ) : (
+                  <div className="admin-actions">
+                    <div className="admin-credentials">
+                      <strong>Authenticated as hard-coded admin</strong>
+                      <strong>Authenticated with server-side admin credentials</strong>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => {
+                          setIsAdminAuthenticated(false)
+                          setAdminCredentials(null)
+                          setAdminUsername('')
+                          setAdminPassword('')
+                          setAdminMessage('Admin logged out.')
+                        }}
+                      >
+                        Log Out
+                      </button>
+                    </div>
+
+                    <div className="database-list">
+                      {profiles.map((profile) => (
+                        <div className="profile-row admin-row" key={profile.id}>
+                          <div className="profile-meta">
+                            <img src={profile.image} alt={profile.name} />
+                            <div>
+                              <strong>{profile.name}</strong>
+                              <span>ID {profile.id}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="danger-button"
+                            onClick={() => handleDeleteProfile(profile.id)}
+                            disabled={isDeletingProfile}
+                          >
+                            Remove User
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
+                )}
+
+                <div className="result-banner warning">{adminMessage}</div>
+              </div>
+
+              <div className="section-card">
+                <div className="section-heading">
+                  <p className="section-kicker">Backend</p>
+                  <h2>Vercel and Neon setup</h2>
+                </div>
+
+                <div className="integration-list">
+                  <div className="integration-item">
+                    <span>DB</span>
+                    <p>
+                      Set <code>DATABASE_URL</code> in Vercel using your Neon connection string. The
+                      serverless functions auto-create the profiles table on first use.
+                    </p>
+                  </div>
+                  <div className="integration-item">
+                    <span>AUTH</span>
+                    <p>
+                      Set <code>ADMIN_USERNAME</code> and <code>ADMIN_PASSWORD</code> in Vercel to
+                      control the admin login and delete actions.
+                    </p>
+                  </div>
+                  <div className="integration-item">
+                    <span>GET</span>
+                    <p><code>/api/profiles</code> returns the enrolled users from Neon.</p>
+                  </div>
+                  <div className="integration-item">
+                    <span>POST</span>
+                    <p><code>/api/profiles</code> stores a new user with the captured face set.</p>
+                  </div>
+                  <div className="integration-item">
+                    <span>DEL</span>
+                    <p><code>/api/profiles/:id</code> removes a registered user for the admin page.</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <section className="about-grid footer-section">
+            <div className="section-card">
+              <div className="section-heading">
+                <p className="section-kicker">Overview</p>
+                <h2>What this site is demonstrating</h2>
+              </div>
+
+              <p className="section-copy">
+                The capstone flow is split into registration, recognition, adversarial attack, and
+                admin management so viewers can compare normal authentication against attack behavior
+                and simple operational controls.
+              </p>
+
+              <div className="about-points">
+                <div>
+                  <strong>Normal path</strong>
+                  <p>User face is enrolled and later recognized for authentication.</p>
+                </div>
+                <div>
+                  <strong>Attack path</strong>
+                  <p>
+                    An adversarially perturbed image steers the classifier toward a different
+                    enrolled identity.
+                  </p>
+                </div>
+                <div>
+                  <strong>Persistence</strong>
+                  <p>
+                    Vercel serverless routes can now persist profiles in Neon rather than relying on
+                    in-memory demo data only.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="section-card">
+              <div className="section-heading">
+                <p className="section-kicker">Integration</p>
+                <h2>Required backend endpoints</h2>
+              </div>
+
+              <div className="integration-list">
+                <div className="integration-item">
+                  <span>GET</span>
+                  <p><code>/api/profiles</code> returns the enrolled profile list used by the dropdowns and database panel.</p>
+                </div>
+                <div className="integration-item">
+                  <span>POST</span>
+                  <p><code>/api/profiles</code> accepts <code>{'{ name, captures }'}</code> and returns the saved profile record.</p>
+                </div>
+                <div className="integration-item">
+                  <span>POST</span>
+                  <p><code>/api/recognitions</code> accepts <code>{'{ image, selectedProfileId }'}</code> and returns a matched profile plus confidence.</p>
+                </div>
+                <div className="integration-item">
+                  <span>POST</span>
+                  <p><code>/api/attacks/fgsm</code> accepts <code>{'{ image, targetProfileId, epsilon }'}</code> and returns attack outputs.</p>
                 </div>
               </div>
             </div>
           </section>
-        )}
-
-        <section className="about-grid footer-section">
-          <div className="section-card">
-            <div className="section-heading">
-              <p className="section-kicker">Overview</p>
-              <h2>What this site is demonstrating</h2>
-            </div>
-
-            <p className="section-copy">
-              The capstone flow is intentionally split into registration, recognition, and
-              adversarial attack sections so viewers can compare the trusted path against the
-              manipulated path.
-            </p>
-
-            <div className="about-points">
-              <div>
-                <strong>Normal path</strong>
-                <p>User face is enrolled and later recognized for authentication.</p>
-              </div>
-              <div>
-                <strong>Attack path</strong>
-                <p>
-                  An adversarially perturbed image steers the classifier toward a different
-                  enrolled identity.
-                </p>
-              </div>
-              <div>
-                <strong>Current scope</strong>
-                <p>
-                  This frontend now has API wiring in place. The remaining work is implementing
-                  the backend endpoints and their model/database logic.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="section-card">
-            <div className="section-heading">
-              <p className="section-kicker">Integration</p>
-              <h2>Required backend endpoints</h2>
-            </div>
-
-            <div className="integration-list">
-              <div className="integration-item">
-                <span>GET</span>
-                <p><code>/api/profiles</code> returns the enrolled profile list used by the dropdowns and database panel.</p>
-              </div>
-              <div className="integration-item">
-                <span>POST</span>
-                <p><code>/api/profiles</code> accepts <code>{'{ name, captures }'}</code> and returns the saved profile record.</p>
-              </div>
-              <div className="integration-item">
-                <span>POST</span>
-                <p><code>/api/recognitions</code> accepts <code>{'{ image }'}</code> and returns a matched profile plus confidence.</p>
-              </div>
-              <div className="integration-item">
-                <span>POST</span>
-                <p><code>/api/attacks/fgsm</code> accepts <code>{'{ image, targetProfileId, epsilon }'}</code> and returns attack outputs.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
-    <Analytics />
+        </main>
+      </div>
+      <Analytics />
     </>
   )
 }

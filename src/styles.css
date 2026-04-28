@@ -249,6 +249,17 @@ input[type='file'] {
   margin: 18px 0;
 }
 
+.single-row-actions {
+  grid-template-columns: 1fr;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0;
+}
+
 .primary-button,
 .secondary-button {
   border-radius: 6px;
@@ -293,6 +304,11 @@ input[type='file'] {
 }
 
 .capture-button.complete {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.complete {
   opacity: 0.55;
   cursor: default;
 }
@@ -392,6 +408,10 @@ input[type='file'] {
   font-size: 0.92rem;
 }
 
+.inline-camera-frame {
+  margin-bottom: 18px;
+}
+
 .preview-card .large {
   min-height: 320px;
 }
@@ -427,10 +447,44 @@ input[type='file'] {
   background: var(--surface-soft);
 }
 
+.profile-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .profile-row img {
   width: 58px;
   height: 58px;
   object-fit: cover;
+}
+
+.admin-form,
+.admin-actions {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-credentials,
+.admin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.danger-button {
+  border: 1px solid #a93a4a;
+  background: #5d1624;
+  color: #ffe6ea;
+  border-radius: 6px;
+  padding: 12px 16px;
+  cursor: pointer;
+  min-height: 46px;
+}
+
+.danger-button:hover {
+  background: #7e1f31;
 }
 
 .result-banner {
@@ -557,6 +611,13 @@ input[type='file'] {
 
   .actions {
     grid-template-columns: 1fr auto 1fr;
+  }
+
+  .inline-actions,
+  .admin-credentials,
+  .admin-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .tab {
