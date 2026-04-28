@@ -11,7 +11,7 @@ export default async function handler(request, response) {
     return
   }
 
-  const profileId = request.query?.id
+  const profileId = request.params?.id ?? request.query?.id
 
   if (!profileId || Number.isNaN(Number(profileId))) {
     return sendJson(response, { error: 'A numeric profile id is required.' }, 400)

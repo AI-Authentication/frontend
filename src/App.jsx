@@ -52,12 +52,59 @@ function formatConfidence(confidence) {
   return `${value.toFixed(1)}%`
 }
 
+function compressImageDataUrl(dataUrl, { maxDimension = 960, quality = 0.72 } = {}) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      const width = image.naturalWidth || image.width
+      const height = image.naturalHeight || image.height
+      const scale = Math.min(1, maxDimension / Math.max(width, height))
+      const targetWidth = Math.max(1, Math.round(width * scale))
+      const targetHeight = Math.max(1, Math.round(height * scale))
+
+      const canvas = document.createElement('canvas')
+      canvas.width = targetWidth
+      canvas.height = targetHeight
+      const context = canvas.getContext('2d')
+      if (!context) {
+        reject(new Error('Unable to process image.'))
+        return
+      }
+
+      context.drawImage(image, 0, 0, targetWidth, targetHeight)
+      resolve(canvas.toDataURL('image/jpeg', quality))
+    }
+    image.onerror = () => reject(new Error('Unable to load selected image.'))
+    image.src = dataUrl
+  })
+}
+
+function captureCompressedFrame(video, canvas, { maxDimension = 960, quality = 0.72 } = {}) {
+  const sourceWidth = video.videoWidth || 960
+  const sourceHeight = video.videoHeight || 720
+  const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight))
+
+  canvas.width = Math.max(1, Math.round(sourceWidth * scale))
+  canvas.height = Math.max(1, Math.round(sourceHeight * scale))
+
+  const context = canvas.getContext('2d')
+  context.drawImage(video, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL('image/jpeg', quality)
+}
+
 function readSingleImageFile(event, setter) {
   const file = event.target.files?.[0]
   if (!file) return
 
   const reader = new FileReader()
-  reader.onload = () => setter(String(reader.result))
+  reader.onload = async () => {
+    try {
+      const compressed = await compressImageDataUrl(String(reader.result))
+      setter(compressed)
+    } catch {
+      setter(String(reader.result))
+    }
+  }
   reader.readAsDataURL(file)
 }
 
@@ -360,11 +407,7 @@ function App() {
       return
     }
 
-    canvas.width = video.videoWidth || 960
-    canvas.height = video.videoHeight || 720
-    const context = canvas.getContext('2d')
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
-    const nextImage = canvas.toDataURL('image/jpeg', 0.92)
+    const nextImage = captureCompressedFrame(video, canvas)
     const prompt = capturePrompts[captureStep]
     const nextShots = {
       ...capturedShots,
@@ -391,11 +434,7 @@ function App() {
       return
     }
 
-    canvas.width = video.videoWidth || 960
-    canvas.height = video.videoHeight || 720
-    const context = canvas.getContext('2d')
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
-    const nextImage = canvas.toDataURL('image/jpeg', 0.92)
+    const nextImage = captureCompressedFrame(video, canvas)
     setRecognitionImage(nextImage)
     setRecognitionResult('Captured a test face from the live camera preview.')
   }
@@ -408,11 +447,7 @@ function App() {
       return
     }
 
-    canvas.width = video.videoWidth || 960
-    canvas.height = video.videoHeight || 720
-    const context = canvas.getContext('2d')
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
-    const nextImage = canvas.toDataURL('image/jpeg', 0.92)
+    const nextImage = captureCompressedFrame(video, canvas)
     setAttackImage(nextImage)
     setAttackConfidence('')
     setAttackOutputImage('')

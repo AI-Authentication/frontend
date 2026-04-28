@@ -23,10 +23,6 @@ app.use(express.urlencoded({ extended: false, limit: '25mb' }))
 app.get('/api/health', healthHandler)
 app.all('/api/profiles', profilesHandler)
 app.all('/api/profiles/:id', (request, response) => {
-  request.query = {
-    ...request.query,
-    id: request.params.id,
-  }
   return profileByIdHandler(request, response)
 })
 app.post('/api/admin/login', adminLoginHandler)
@@ -35,7 +31,7 @@ app.post('/api/attacks/fgsm', fgsmHandler)
 
 app.use(express.static(distDir))
 
-app.get('*', (request, response) => {
+app.use((request, response) => {
   response.sendFile(path.join(distDir, 'index.html'))
 })
 
