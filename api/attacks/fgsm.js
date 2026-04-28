@@ -9,7 +9,6 @@ export default async function handler(request, response) {
   const body = await readJsonBody(request)
   const image = String(body?.image || '')
   const targetProfileId = body?.targetProfileId
-  const epsilon = Number(body?.epsilon || 0)
 
   if (!image) {
     return sendJson(response, { error: 'An image is required.' }, 400)
@@ -27,9 +26,9 @@ export default async function handler(request, response) {
     return sendJson(response, {
       targetProfileId: target.id,
       targetName: target.name,
-      epsilon,
+      confidence: 0.98,
       adversarialImage: image,
-      perturbationImage: '',
+      perturbationImage: image,
       message:
         'Placeholder FGSM response. Replace this with the backend attack pipeline that generates perturbation output.',
     })

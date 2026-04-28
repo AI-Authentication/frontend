@@ -112,13 +112,12 @@ export async function recognizeFace({ image, selectedProfileId }) {
   })
 }
 
-export async function runFgsmAttack({ image, targetProfileId, epsilon }) {
+export async function runFgsmAttack({ image, targetProfileId }) {
   return request(endpoints.fgsmAttack, {
     method: 'POST',
     body: JSON.stringify({
       image,
       targetProfileId,
-      epsilon,
     }),
   })
 }

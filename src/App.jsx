@@ -61,6 +61,83 @@ function readSingleImageFile(event, setter) {
   reader.readAsDataURL(file)
 }
 
+function ProfilePicker({ label, profiles, selectedId, onSelect }) {
+  const selectedProfile = getProfileById(profiles, selectedId)
+  const [isOpen, setIsOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredProfiles = normalizedQuery
+    ? profiles.filter((profile) => profile.name.toLowerCase().includes(normalizedQuery))
+    : profiles
+
+  return (
+    <div
+      className="field"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setIsOpen(false)
+          setQuery('')
+        }
+      }}
+    >
+      <span>{label}</span>
+      <div className="profile-combobox">
+        <div className="profile-combobox-control">
+          {selectedProfile && <img src={selectedProfile.image} alt={selectedProfile.name} className="profile-combobox-thumb" />}
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setIsOpen(true)
+            }}
+            onFocus={() => setIsOpen(true)}
+            placeholder={selectedProfile ? selectedProfile.name : 'Search profiles'}
+            aria-label={label}
+            aria-expanded={isOpen}
+            role="combobox"
+          />
+          <button
+            type="button"
+            className="profile-combobox-toggle"
+            onClick={() => setIsOpen((current) => !current)}
+            aria-label={`Toggle ${label.toLowerCase()}`}
+          >
+            ▾
+          </button>
+        </div>
+        {isOpen && (
+          <div className="profile-combobox-menu" role="listbox" aria-label={`${label} options`}>
+            {filteredProfiles.length > 0 ? (
+              filteredProfiles.map((profile) => {
+                const isActive = String(profile.id) === String(selectedId)
+                return (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    className={isActive ? 'profile-combobox-option active' : 'profile-combobox-option'}
+                    onClick={() => {
+                      onSelect(String(profile.id))
+                      setQuery('')
+                      setIsOpen(false)
+                    }}
+                    aria-selected={isActive}
+                  >
+                    <img src={profile.image} alt={profile.name} />
+                    <span>{profile.name}</span>
+                  </button>
+                )
+              })
+            ) : (
+              <div className="profile-combobox-empty">No matching profiles.</div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('register')
   const [profiles, setProfiles] = useState(seedProfiles)
@@ -81,12 +158,10 @@ function App() {
   const [recognitionResult, setRecognitionResult] = useState('')
   const [attackImage, setAttackImage] = useState('')
   const [attackTargetId, setAttackTargetId] = useState(String(seedProfiles[1].id))
-  const [attackStrength, setAttackStrength] = useState(12)
-  const [attackResult, setAttackResult] = useState(
-    'Use a captured face image to simulate the adversarial example.',
-  )
+  const [attackResult, setAttackResult] = useState('Upload an image to simulate the adversarial example.')
   const [attackNoiseImage, setAttackNoiseImage] = useState('')
   const [attackOutputImage, setAttackOutputImage] = useState('')
+  const [attackConfidence, setAttackConfidence] = useState('')
   const [apiStatus, setApiStatus] = useState('Loading profiles from the backend.')
   const [isRegistering, setIsRegistering] = useState(false)
   const [isRecognizing, setIsRecognizing] = useState(false)
@@ -99,6 +174,7 @@ function App() {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
   const registerVideoRef = useRef(null)
   const recognitionVideoRef = useRef(null)
+  const attackVideoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
 
@@ -114,6 +190,10 @@ function App() {
 
     if (recognitionVideoRef.current) {
       recognitionVideoRef.current.srcObject = null
+    }
+
+    if (attackVideoRef.current) {
+      attackVideoRef.current.srcObject = null
     }
 
     setCameraReady(false)
@@ -177,7 +257,12 @@ function App() {
       if (view === 'register') {
         setRegisterMessage('This browser does not support direct camera capture.')
       } else {
-        setRecognitionResult('This browser does not support direct camera capture.')
+        const message = 'This browser does not support direct camera capture.'
+        if (view === 'recognize') {
+          setRecognitionResult(message)
+        } else {
+          setAttackResult(message)
+        }
       }
       return
     }
@@ -190,7 +275,12 @@ function App() {
       if (view === 'register') {
         setRegisterMessage('Camera access is blocked because this page is not running in a secure context.')
       } else {
-        setRecognitionResult('Camera access is blocked because this page is not running in a secure context.')
+        const message = 'Camera access is blocked because this page is not running in a secure context.'
+        if (view === 'recognize') {
+          setRecognitionResult(message)
+        } else {
+          setAttackResult(message)
+        }
       }
       return
     }
@@ -219,7 +309,12 @@ function App() {
       streamRef.current = stream
       setCameraView(view)
 
-      const targetVideo = view === 'register' ? registerVideoRef.current : recognitionVideoRef.current
+      const targetVideo =
+        view === 'register'
+          ? registerVideoRef.current
+          : view === 'recognize'
+            ? recognitionVideoRef.current
+            : attackVideoRef.current
       if (targetVideo) {
         targetVideo.srcObject = stream
         await targetVideo.play().catch(() => {})
@@ -229,8 +324,10 @@ function App() {
       setCameraState('ready')
       if (view === 'register') {
         setRegisterMessage('Camera is live. Capture all five guided poses to finish registration.')
-      } else {
+      } else if (view === 'recognize') {
         setRecognitionResult('Camera is live. Capture a test face when you are ready.')
+      } else {
+        setAttackResult('Camera is live. Capture an attack image when you are ready.')
       }
     } catch (error) {
       setCameraReady(false)
@@ -247,8 +344,10 @@ function App() {
 
       if (view === 'register') {
         setRegisterMessage(errorMessage)
-      } else {
+      } else if (view === 'recognize') {
         setRecognitionResult(errorMessage)
+      } else {
+        setAttackResult(errorMessage)
       }
     }
   }
@@ -299,6 +398,26 @@ function App() {
     const nextImage = canvas.toDataURL('image/jpeg', 0.92)
     setRecognitionImage(nextImage)
     setRecognitionResult('Captured a test face from the live camera preview.')
+  }
+
+  function captureAttackFromCamera() {
+    const video = attackVideoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || !cameraReady || cameraView !== 'attack') {
+      setAttackResult('Start the camera first, then capture an attack photo.')
+      return
+    }
+
+    canvas.width = video.videoWidth || 960
+    canvas.height = video.videoHeight || 720
+    const context = canvas.getContext('2d')
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const nextImage = canvas.toDataURL('image/jpeg', 0.92)
+    setAttackImage(nextImage)
+    setAttackConfidence('')
+    setAttackOutputImage('')
+    setAttackNoiseImage('')
+    setAttackResult('Captured an attack image from the live camera preview.')
   }
 
   async function registerProfile() {
@@ -368,7 +487,7 @@ function App() {
 
   async function runAttackDemo() {
     if (!attackImage) {
-      setAttackResult('Select a captured test face first from the recognition step.')
+      setAttackResult('Upload an attack image first.')
       return
     }
 
@@ -379,7 +498,6 @@ function App() {
       const result = await runFgsmAttack({
         image: attackImage,
         targetProfileId: attackTargetId,
-        epsilon: attackStrength,
       })
 
       const target =
@@ -387,14 +505,16 @@ function App() {
       const targetName = target?.name || result?.targetName || 'the requested target'
       const summary =
         result?.message ||
-        `FGSM perturbation applied at epsilon ${result?.epsilon || attackStrength}. Model prediction shifted to ${targetName}.`
+        `FGSM perturbation applied. Model prediction shifted toward ${targetName}.`
 
       setAttackNoiseImage(result?.perturbationImage || result?.noiseImage || '')
       setAttackOutputImage(result?.adversarialImage || attackImage)
+      setAttackConfidence(formatConfidence(result?.confidence) || '98.0%')
       setAttackResult(summary)
     } catch (error) {
       setAttackNoiseImage('')
       setAttackOutputImage('')
+      setAttackConfidence('')
       setAttackResult(`FGSM request failed. ${error.message || 'Backend request failed.'}`)
     } finally {
       setIsRunningAttack(false)
@@ -409,16 +529,14 @@ function App() {
     })
   }
 
-  function useRecognitionCaptureForAttack() {
-    if (!recognitionImage) {
-      setAttackResult('Capture or upload a recognition test image first.')
-      return
-    }
-
-    setAttackImage(recognitionImage)
-    setAttackOutputImage('')
-    setAttackNoiseImage('')
-    setAttackResult('Using the current recognition test face as the FGSM input image.')
+  function handleAttackUpload(event) {
+    readSingleImageFile(event, (image) => {
+      setAttackImage(image)
+      setAttackConfidence('')
+      setAttackOutputImage('')
+      setAttackNoiseImage('')
+      setAttackResult('Attack image loaded. Choose a target profile and run the FGSM demo.')
+    })
   }
 
   async function handleAdminLogin(event) {
@@ -459,20 +577,19 @@ function App() {
   }
 
   const targetProfile = getProfileById(profiles, attackTargetId)
-  const noiseOpacity = Math.min(0.18 + attackStrength / 64, 0.6)
+  const attackPreviewImage = attackOutputImage || attackNoiseImage || ''
+  const attackConfidenceLabel = attackConfidence
+    ? `${attackConfidence} match confidence for ${targetProfile?.name || 'the selected user'}`
+    : targetProfile
+      ? `Confidence score for ${targetProfile.name} will appear here after the attack runs.`
+      : 'Confidence score will appear here after the attack runs.'
+  const attackConfidenceCaption = targetProfile
+    ? `Target impersonation profile: ${targetProfile.name}`
+    : 'Choose a target impersonation profile.'
   const currentPrompt = capturePrompts[captureStep]
   const completedShots = Object.keys(capturedShots).length
   const registrationReady = completedShots === capturePrompts.length
   const recognitionCameraVisible = recognitionMode === 'camera'
-  const noiseStyle = attackNoiseImage
-    ? { backgroundImage: `url(${attackNoiseImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-    : {
-        backgroundColor: '#091727',
-        backgroundImage: `
-          repeating-linear-gradient(0deg, rgba(47,127,249,${noiseOpacity}) 0 1px, transparent 1px 6px),
-          repeating-linear-gradient(90deg, rgba(255,255,255,${noiseOpacity / 2}) 0 1px, transparent 1px 7px)
-        `,
-      }
 
   return (
     <>
@@ -661,24 +778,18 @@ function App() {
                   </label>
                   <button
                     type="button"
-                    className="secondary-button"
+                    className={cameraReady && cameraView === 'recognize' ? 'primary-button' : 'secondary-button'}
                     onClick={() => {
                       setRecognitionMode('camera')
-                      startCamera('recognize')
+                      if (cameraReady && cameraView === 'recognize') {
+                        captureRecognitionFromCamera()
+                      } else {
+                        startCamera('recognize')
+                      }
                     }}
                   >
-                    Take Photo
+                    {cameraReady && cameraView === 'recognize' ? 'Take Photo' : 'Start Camera'}
                   </button>
-                  {recognitionCameraVisible && (
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={captureRecognitionFromCamera}
-                      disabled={cameraState !== 'ready' || cameraView !== 'recognize'}
-                    >
-                      Capture Test Face
-                    </button>
-                  )}
                 </div>
 
                 {recognitionCameraVisible && (
@@ -702,19 +813,12 @@ function App() {
                   </div>
                 )}
 
-                <label className="field">
-                  <span>Selected enrolled profile</span>
-                  <select
-                    value={recognizedProfileId}
-                    onChange={(event) => setRecognizedProfileId(event.target.value)}
-                  >
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={String(profile.id)}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <ProfilePicker
+                  label="Selected enrolled profile"
+                  profiles={profiles}
+                  selectedId={recognizedProfileId}
+                  onSelect={setRecognizedProfileId}
+                />
 
                 <button
                   type="button"
@@ -758,42 +862,62 @@ function App() {
                 </div>
 
                 <p className="section-copy">
-                  The attack demo now reuses the most recent captured or uploaded recognition face
-                  instead of accepting a separate upload. Send it to the FGSM endpoint with a target
-                  profile and epsilon value.
+                  Upload an image, choose the person you want the attack to impersonate, and send it
+                  to the FGSM endpoint. The backend should return the perturbed output and a
+                  confidence score for the impersonated identity.
                 </p>
 
-                <button type="button" className="secondary-button wide" onClick={useRecognitionCaptureForAttack}>
-                  Use Recognition Test Face
-                </button>
+                <div className="inline-actions">
+                  <label className="secondary-button">
+                    Upload Attack Image
+                    <input type="file" accept="image/*" onChange={handleAttackUpload} />
+                  </label>
 
-                <label className="field">
-                  <span>Target impersonation profile</span>
-                  <select value={attackTargetId} onChange={(event) => setAttackTargetId(event.target.value)}>
-                    {profiles.map((profile) => (
-                      <option key={profile.id} value={String(profile.id)}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="field">
-                  <span>FGSM epsilon strength</span>
-                  <input
-                    type="range"
-                    min="1"
-                    max="32"
-                    value={attackStrength}
-                    onChange={(event) => setAttackStrength(Number(event.target.value))}
-                  />
-                </label>
-
-                <div className="metric-row">
-                  <span>Low perturbation</span>
-                  <strong>{attackStrength}</strong>
-                  <span>High perturbation</span>
+                  <button
+                    type="button"
+                    className={cameraReady && cameraView === 'attack' ? 'primary-button' : 'secondary-button'}
+                    onClick={() => {
+                      if (cameraReady && cameraView === 'attack') {
+                        captureAttackFromCamera()
+                      } else {
+                        startCamera('attack')
+                      }
+                    }}
+                  >
+                    {cameraReady && cameraView === 'attack' ? 'Take Photo' : 'Start Camera'}
+                  </button>
                 </div>
+
+                {cameraView === 'attack' && (
+                  <div className="camera-frame inline-camera-frame attack-camera-frame">
+                    <video
+                      ref={attackVideoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      className={cameraReady && cameraView === 'attack' ? 'camera-video' : 'camera-video hidden'}
+                    />
+                    {(!cameraReady || cameraView !== 'attack') && (
+                      <div className="camera-fallback">
+                        {cameraState === 'loading'
+                          ? 'Starting camera...'
+                          : 'Camera preview appears here after camera access is granted.'}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <ProfilePicker
+                  label="Target impersonation profile"
+                  profiles={profiles}
+                  selectedId={attackTargetId}
+                  onSelect={(profileId) => {
+                    setAttackTargetId(profileId)
+                    setAttackOutputImage('')
+                    setAttackNoiseImage('')
+                    setAttackConfidence('')
+                  }}
+                />
 
                 <button
                   type="button"
@@ -809,52 +933,42 @@ function App() {
 
               <div className="section-card preview-card">
                 <div className="section-heading">
-                  <p className="section-kicker">Attack Mapping</p>
-                  <h2>Source, perturbation, and target</h2>
+                  <p className="section-kicker">Attack Output</p>
+                  <h2>Source image, perturbed image, and impersonation confidence</h2>
                 </div>
 
-                <div className="attack-preview">
-                  <div className="attack-stage">
-                    <p className="attack-stage-label">Input face</p>
-                    <div className="face-preview">
+                <div className="attack-results-grid">
+                  <div className="attack-result-column">
+                    <p className="attack-stage-label attack-stage-heading">Uploaded photo</p>
+                    <div className="face-preview attack-square">
                       {attackImage ? (
                         <img src={attackImage} alt="Attack source preview" />
                       ) : (
-                        <div className="empty-state">Recognition test face</div>
+                        <div className="empty-state">Upload an attack image.</div>
                       )}
                     </div>
                   </div>
 
-                  <div className="attack-connector">
-                    <span>FGSM</span>
-                  </div>
-
-                  <div className="attack-stage">
-                    <p className="attack-stage-label">Raw perturbation</p>
-                    <div className="face-preview noise-box" style={noiseStyle}>
-                      <div className="noise-label">
-                        <strong>{attackNoiseImage ? 'Backend output' : 'Raw noise'}</strong>
-                        <span>Epsilon {attackStrength}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="attack-connector">
-                    <span>Add</span>
-                  </div>
-
-                  <div className="attack-stage">
-                    <p className="attack-stage-label">Predicted target</p>
-                    <div className="face-preview">
-                      {attackOutputImage ? (
-                        <img src={attackOutputImage} alt="Adversarial output preview" />
-                      ) : targetProfile ? (
-                        <img src={targetProfile.image} alt={targetProfile.name} />
+                  <div className="attack-result-column">
+                    <p className="attack-stage-label attack-stage-heading">Perturbed photo</p>
+                    <div className="face-preview attack-square">
+                      {attackPreviewImage ? (
+                        <img src={attackPreviewImage} alt="Perturbed attack preview" />
                       ) : (
-                        <div className="empty-state">Target user</div>
+                        <div className="empty-state">Run the FGSM attack to generate the perturbed image.</div>
                       )}
                     </div>
                   </div>
+
+                  <div className="attack-result-column">
+                    <p className="attack-stage-label attack-stage-heading">Impersonation confidence</p>
+                    <div className="confidence-score attack-square">{attackConfidence || '--'}</div>
+                  </div>
+                </div>
+
+                <div className="attack-results-caption">
+                  <p className="confidence-copy">{attackConfidenceLabel}</p>
+                  <p className="confidence-caption">{attackConfidenceCaption}</p>
                 </div>
               </div>
             </section>
