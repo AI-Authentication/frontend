@@ -80,13 +80,14 @@ input[type='file'] {
 
 .topbar {
   display: flex;
-  align-items: end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
   padding: 18px 20px;
   margin-bottom: 18px;
   background: var(--panel);
   border-radius: 14px;
+  flex-wrap: wrap;
 }
 
 .brand-block h1 {
@@ -135,16 +136,17 @@ input[type='file'] {
 .tab-bar {
   display: flex;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   background: transparent;
-  overflow: hidden;
+  overflow: visible;
   border: 0;
   box-shadow: none;
   min-width: 0;
+  width: 100%;
 }
 
 .tab {
-  flex: 0 0 auto;
+  flex: 1 1 180px;
   border: 1px solid var(--line);
   background: var(--surface-soft);
   color: var(--muted);
@@ -154,6 +156,7 @@ input[type='file'] {
   white-space: nowrap;
   border-radius: 10px;
   font-size: 0.94rem;
+  text-align: center;
 }
 
 .tab:hover,
@@ -621,8 +624,10 @@ input[type='file'] {
   }
 
   .tab {
+    flex: 1 1 calc(50% - 8px);
     padding: 10px 12px;
     font-size: 0.86rem;
+    white-space: normal;
   }
 
   .attack-preview {
