@@ -140,7 +140,7 @@ function formatConfidence(confidence) {
   return `${value.toFixed(1)}%`
 }
 
-function compressImageDataUrl(dataUrl, { maxDimension = 960, quality = 0.72 } = {}) {
+function compressImageDataUrl(dataUrl, { maxDimension = 1440, quality = 0.9 } = {}) {
   return new Promise((resolve, reject) => {
     const image = new Image()
     image.onload = () => {
@@ -167,7 +167,7 @@ function compressImageDataUrl(dataUrl, { maxDimension = 960, quality = 0.72 } = 
   })
 }
 
-function captureCompressedFrame(video, canvas, { maxDimension = 960, quality = 0.72 } = {}) {
+function captureCompressedFrame(video, canvas, { maxDimension = 1440, quality = 0.9 } = {}) {
   const sourceWidth = video.videoWidth || 960
   const sourceHeight = video.videoHeight || 720
   const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight))

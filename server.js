@@ -20,8 +20,8 @@ const app = express()
 const port = Number(process.env.PORT || 3000)
 const distDir = path.join(__dirname, 'dist')
 
-app.use(express.json({ limit: '25mb' }))
-app.use(express.urlencoded({ extended: false, limit: '25mb' }))
+app.use(express.json({ limit: '40mb' }))
+app.use(express.urlencoded({ extended: false, limit: '40mb' }))
 
 app.get('/api/health', healthHandler)
 app.all('/api/profiles', profilesHandler)
