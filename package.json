@@ -8,7 +8,9 @@
     "dev:client": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "node server.js"
+    "server": "node server.js",
+    "db:up": "docker compose --env-file .env.production up -d postgres",
+    "db:down": "docker compose --env-file .env.production down"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

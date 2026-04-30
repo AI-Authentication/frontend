@@ -9,6 +9,16 @@ import {
   runFgsmAttack,
 } from './api'
 import { Analytics } from '@vercel/analytics/react'
+import faceEncodingPhoto from './pictures/face encoding.png'
+import fgsmAttackDemoPhoto from './pictures/FGSM Attack demo.png'
+import fgsmGradientTargetPhoto from './pictures/Gradient target .png'
+import fgsmImpersonationResultPhoto from './pictures/Impersonation result.png'
+import matchDecisionPhoto from './pictures/Match decision.png'
+import fgsmPerturbationStepPhoto from './pictures/Perturbation step.png'
+import recognitionDemoPhoto from './pictures/Recignition demo.png'
+import recognitionWalkthroughPhoto from './pictures/Recognition walkthough photo.png'
+import recognitionWalkthroughNoTextPhoto from './pictures/Recognition walkthough- without text.png'
+import similarityComparisonPhoto from './pictures/similarity comparison.png'
 
 const tabs = [
   { id: 'register', label: 'Register Face' },
@@ -44,86 +54,77 @@ const seedProfiles = [
 
 const overviewContent = {
   register: {
-    heading: 'How registration works',
+    heading: 'Tabs overview',
     copy:
-      'Registration walks a user through capture prompts, stores a set of guided face images, and builds the enrolled profile used by the rest of the system.',
+      'Your data and privacy are important. This demo sends only images and a name string to the backend, where they are stored in a PostgreSQL database. Your face is also not used to train the open-source model- it is only used for recognition testing and FGSM attack demos within this deployed environment.',
     cards: [
       {
         title: 'Capture sequence',
-        image:
-          'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80',
+        image: recognitionWalkthroughNoTextPhoto,
         description:
-          'The camera guides the user through multiple views so the profile has coverage across pose changes.',
+          'In this tab, follow the prompts through multiple camera views so the profile has coverage across pose changes. Your face is then stored in the database for use in the other tabs. Contact Zack or Elias if you would like your profile to be removed.',
       },
       {
-        title: 'Enrollment storage',
-        image:
-          'https://images.unsplash.com/photo-1555949963-aa79dcee981c?auto=format&fit=crop&w=1200&q=80',
+        title: 'Recognition Test',
+        image: recognitionDemoPhoto,
         description:
-          'Captured photos are saved as a single enrolled identity that can be searched and managed later.',
+          'In the recognition tab, you can compare a captured or uploaded face against the enrolled profiles to see if the model correctly identifies the two as the same person.',
       },
       {
-        title: 'Profile database',
-        image:
-          'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80',
+        title: 'FGSM Attack Demo',
+        image: fgsmAttackDemoPhoto,
         description:
-          'Each saved registration becomes part of the profile set used for recognition and adversarial testing.',
+          'In the FGSM attack demo tab, you can see how a source image can be subtly manipulated to impersonate another enrolled user, then test the confidence of the resulting attack image against the target profile.',
       },
     ],
   },
   recognize: {
     heading: 'How recognition works',
     copy:
-      'Recognition compares a fresh face image against the enrolled profile set and returns whether it matched along with a confidence percentage.',
+      'Behind the scenes, the model converts faces into numerical feature patterns, compares those patterns against enrolled users, and decides whether the similarity score is strong enough to count as a match.',
     cards: [
       {
-        title: 'Input capture',
-        image:
-          'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=1200&q=80',
+        title: '1. Face encoding',
+        image: faceEncodingPhoto,
         description:
-          'A live camera frame or uploaded image becomes the probe image that will be evaluated.',
+          'The uploaded or captured face is processed by the model and transformed into a compact numerical embedding that represents key facial features.',
       },
       {
-        title: 'Profile comparison',
-        image:
-          'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1200&q=80',
+        title: '2. Similarity comparison',
+        image: similarityComparisonPhoto,
         description:
-          'The backend compares the input against enrolled users and selects the closest match candidate.',
+          'That embedding is compared against the stored embeddings for enrolled users to measure how close the facial feature patterns are. On this site, the database profiles are not searched and only one profile can be selected for comparison.',
       },
       {
-        title: 'Decision output',
-        image:
-          'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80',
+        title: '3. Match decision',
+        image: matchDecisionPhoto,
         description:
-          'The system returns match or no-match status together with a confidence percentage from the model.',
+          'If the similarity score passes the system threshold, the backend returns a match along with a confidence value showing how strongly the faces align. Test different profiles against your capture to see different scores.',
       },
     ],
   },
   attack: {
-    heading: 'How the FGSM demo works',
+    heading: 'How the FGSM attack works behind the scenes',
     copy:
-      'The FGSM tab shows how a source image can be perturbed toward a target identity, then visualizes the changed image and resulting impersonation confidence.',
+      'Behind the scenes, FGSM computes how the model output should change to resemble a target identity, applies a small pixel-level perturbation in that direction, and then tests whether the altered image is mistaken for the target user.',
     cards: [
       {
-        title: 'Source image',
-        image:
-          'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1200&q=80',
+        title: '1. Gradient target',
+        image: fgsmGradientTargetPhoto,
         description:
-          'The attack starts from a clean uploaded or captured face image that acts as the original sample.',
+          'The model starts with a source face and computes how each pixel would need to change to push the prediction toward the chosen target identity.',
       },
       {
-        title: 'Target identity',
-        image:
-          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=1200&q=80',
+        title: '2. Perturbation step',
+        image: fgsmPerturbationStepPhoto,
         description:
-          'A chosen enrolled profile defines which identity the attack is trying to impersonate.',
+          'FGSM applies a small signed step along that gradient, creating a perturbed image that looks similar to a person but shifts the model response.',
       },
       {
-        title: 'Perturbation result',
-        image:
-          'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80',
+        title: '3. Impersonation result',
+        image: fgsmImpersonationResultPhoto,
         description:
-          'The backend returns a perturbed image and the confidence that the manipulated sample now matches the target.',
+          'The attacked image is run back through the recognizer to see whether the confidence for the target identity rises enough to produce a false match.',
       },
     ],
   },
@@ -284,7 +285,7 @@ function App() {
   const [cameraError, setCameraError] = useState('')
   const [cameraView, setCameraView] = useState(null)
   const [registerMessage, setRegisterMessage] = useState(
-    'Capture five guided face photos, then save the profile through the API.',
+    'Capture the five guided face photos, then save to the database.',
   )
   const [recognitionMode, setRecognitionMode] = useState('upload')
   const [recognitionImage, setRecognitionImage] = useState('')
@@ -631,18 +632,28 @@ function App() {
       const result = await recognizeFace({
         image: imageToRecognize,
         selectedProfileId: recognizedProfileId,
+        referenceProfile: selectedRecognitionProfile,
       })
       const confidenceText = formatConfidence(result?.confidence)
       const isMatch =
         typeof result?.isMatch === 'boolean'
           ? result.isMatch
+          : typeof result?.is_match === 'boolean'
+            ? result.is_match
           : typeof result?.matchFound === 'boolean'
             ? result.matchFound
+            : typeof result?.match_found === 'boolean'
+              ? result.match_found
             : Boolean(result?.match || result?.profileId || result?.matchedProfileId)
       const matchedProfile =
-        result?.match || getProfileById(profiles, result?.profileId || result?.matchedProfileId)
+        result?.match ||
+        result?.referenceProfile ||
+        getProfileById(
+          profiles,
+          result?.profileId || result?.matchedProfileId || result?.matched_profile_id,
+        )
       const matchedName =
-        matchedProfile?.name || result?.name || result?.matchedName || 'Unknown user'
+        matchedProfile?.name || result?.name || result?.matchedName || result?.matched_name || 'Unknown user'
       const statusText = isMatch ? `Match: ${matchedName}` : 'Match: No match'
       const details = [confidenceText && `Confidence: ${confidenceText}`, result?.message]
         .filter(Boolean)
@@ -669,6 +680,7 @@ function App() {
       const result = await runFgsmAttack({
         image: attackImage,
         targetProfileId: attackTargetId,
+        targetProfile: targetProfile,
       })
 
       const target =
@@ -769,8 +781,8 @@ function App() {
       <div className="app-shell">
         <header className="topbar">
           <div className="brand-block">
-            <p className="hero-label">Face Authentication Capstone</p>
-            <h1>Registration, recognition, attack testing, and admin control</h1>
+            <p className="hero-label">Created by Zack Lown and Elias Thompson</p>
+            <h1>Registration, Recognition, and FGSM attack testing</h1>
           </div>
 
           <nav className="tab-bar" aria-label="Sections">
@@ -789,8 +801,7 @@ function App() {
 
         <section className="hero">
           <p className="hero-text">
-            This interface supports face registration, recognition testing, FGSM attack demos, and
-            basic admin management from one deployment.
+            This site is intended to show how facial recognition systems work from end to end, including how users enroll their faces, how the model recognizes identities, and how adversarial attacks can impersonate other users. Try it out by registering your face, then see if the model can recognize you and how it can be fooled by subtle image manipulations. You do not need to register a face to use this site; feel free to explore the recognition and attack demos with the other profiles or your own uploaded images.
           </p>
         </section>
 
@@ -806,9 +817,7 @@ function App() {
                 </div>
 
                 <p className="section-copy">
-                  Capture five guided images for each user: straight on, look left, look right,
-                  eyebrows up, and head down. The backend receives all five images as base64 data
-                  and persists the enrolled profile to Neon.
+                  Capture five guided images. See below for how your captured profile is stored and used in the recognition and attack demo tabs. Your data is not shared or sold.
                 </p>
 
                 <div className="camera-frame">
@@ -823,7 +832,7 @@ function App() {
                     <div className="camera-fallback">
                       {cameraState === 'loading'
                         ? 'Starting camera...'
-                        : 'Camera is off. Start it here and capture the five required registration poses.'}
+                        : 'Camera is off. Start it with the button below.\n\n You may have to allow camera access in your browser settings and refresh the page if you have not done so already.'}
                     </div>
                   )}
                 </div>
@@ -897,11 +906,10 @@ function App() {
                 </div>
 
                 <div className="face-preview large">
-                  {capturedImage ? (
-                    <img src={capturedImage} alt="Captured profile preview" />
-                  ) : (
-                    <div className="empty-state">No face image captured yet.</div>
-                  )}
+                  <img
+                    src={recognitionWalkthroughPhoto}
+                    alt="Recognition walkthrough showing a captured face and enrolled users"
+                  />
                 </div>
 
                 <div className="database-list">
@@ -1168,12 +1176,11 @@ function App() {
               <div className="section-card">
                 <div className="section-heading">
                   <p className="section-kicker">Admin</p>
-                  <h2>Manage enrolled users</h2>
+                  <h2>Login</h2>
                 </div>
 
                 <p className="section-copy">
-                  Use the configured admin credentials to manage enrolled users and remove records
-                  from the system when needed.
+                  Please contact Zack or Elias if you would like to make changes to the enrolled user database.
                 </p>
 
                 {!isAdminAuthenticated ? (
@@ -1184,7 +1191,7 @@ function App() {
                         type="text"
                         value={adminUsername}
                         onChange={(event) => setAdminUsername(event.target.value)}
-                        placeholder="Configured on the server"
+                        placeholder="User"
                       />
                     </label>
 
@@ -1194,7 +1201,7 @@ function App() {
                         type="password"
                         value={adminPassword}
                         onChange={(event) => setAdminPassword(event.target.value)}
-                        placeholder="Configured on the server"
+                        placeholder="************"
                       />
                     </label>
 
@@ -1205,7 +1212,7 @@ function App() {
                 ) : (
                   <div className="admin-actions">
                     <div className="admin-credentials">
-                      <strong>Authenticated with server-side admin credentials</strong>
+                      <strong>Authenticated</strong>
                       <button
                         type="button"
                         className="secondary-button"

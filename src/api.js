@@ -1,5 +1,4 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
-
 const endpoints = {
   health: '/api/health',
   profiles: '/api/profiles',
@@ -8,12 +7,12 @@ const endpoints = {
   fgsmAttack: '/api/attacks/fgsm',
 }
 
-function buildUrl(path) {
-  return `${API_BASE_URL}${path}`
+function buildUrl(path, baseUrl = API_BASE_URL) {
+  return `${baseUrl}${path}`
 }
 
-async function request(path, options = {}) {
-  const response = await fetch(buildUrl(path), {
+async function request(path, options = {}, baseUrl = API_BASE_URL) {
+  const response = await fetch(buildUrl(path, baseUrl), {
     headers: {
       Accept: 'application/json',
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
@@ -105,19 +104,24 @@ export async function deleteProfile(profileId, credentials) {
   })
 }
 
-export async function recognizeFace({ image, selectedProfileId }) {
+export async function recognizeFace({ image, selectedProfileId, referenceProfile }) {
   return request(endpoints.recognition, {
     method: 'POST',
-    body: JSON.stringify({ image, selectedProfileId }),
+    body: JSON.stringify({
+      image,
+      selectedProfileId,
+      referenceProfile,
+    }),
   })
 }
 
-export async function runFgsmAttack({ image, targetProfileId }) {
+export async function runFgsmAttack({ image, targetProfileId, targetProfile }) {
   return request(endpoints.fgsmAttack, {
     method: 'POST',
     body: JSON.stringify({
       image,
       targetProfileId,
+      targetProfile,
     }),
   })
 }

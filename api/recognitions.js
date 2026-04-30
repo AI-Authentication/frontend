@@ -1,3 +1,4 @@
+import { proxyBackendJson } from './_lib/backend.js'
 import { listStoredProfiles } from './_lib/db.js'
 import { methodNotAllowed, readJsonBody, sendJson } from './_lib/http.js'
 
@@ -9,6 +10,8 @@ export default async function handler(request, response) {
   const body = await readJsonBody(request)
   const image = String(body?.image || '')
   const selectedProfileId = body?.selectedProfileId
+  const requestedReferenceProfile =
+    body?.referenceProfile && typeof body.referenceProfile === 'object' ? body.referenceProfile : null
 
   if (!image) {
     return sendJson(response, { error: 'An image is required.' }, 400)
@@ -23,15 +26,20 @@ export default async function handler(request, response) {
       return sendJson(response, { error: 'No enrolled profiles are available.' }, 404)
     }
 
-    return sendJson(response, {
-      isMatch: true,
-      matchedProfileId: selected.id,
-      matchedName: selected.name,
-      confidence: 0.98,
-      match: selected,
-      message: 'Placeholder recognition response. Replace this with your face model inference pipeline.',
+    return proxyBackendJson(response, '/recognition', {
+      image,
+      selectedProfileId,
+      referenceProfile: selected,
     })
   } catch (error) {
-    return sendJson(response, { error: error.message || 'Recognition failed.' }, 500)
+    if (!requestedReferenceProfile) {
+      return sendJson(response, { error: error.message || 'Recognition failed.' }, 500)
+    }
+
+    return proxyBackendJson(response, '/recognition', {
+      image,
+      selectedProfileId,
+      referenceProfile: requestedReferenceProfile,
+    })
   }
 }
