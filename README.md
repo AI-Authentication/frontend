@@ -5,8 +5,14 @@ Frontend webapp for face-auth registration, recognition, FGSM demo flow, and adm
 ## Local setup
 
 1. Install dependencies with `npm install`.
-2. Copy `.env.example` to your local env file if you want a custom API origin or a local Postgres connection.
-3. Run `npm run dev`.
+2. Copy `.env.example` to `.env.local`.
+3. If you want the repo-managed local Postgres, keep `POSTGRES_DB`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, and `DATABASE_URL` aligned in `.env.local`.
+4. Start the local database with `npm run db:up`.
+5. Run `npm run dev`.
+
+This repo defaults to host port `6543` for Docker Postgres so it does not collide with an existing local Postgres on `5432`.
+
+If writes fail with `password authentication failed for user "postgres"`, first make sure your app is pointing at the repo-managed port from `.env.local`. If the container was initialized earlier with a different password, run `npm run db:reset`, then `npm run db:up` to recreate the local database with the password from `.env.local`.
 
 ## Home server deployment
 
