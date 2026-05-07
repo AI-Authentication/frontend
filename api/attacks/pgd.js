@@ -26,17 +26,17 @@ export default async function handler(request, response) {
       return sendJson(response, { error: 'No target profile is available.' }, 404)
     }
 
-    return proxyBackendJson(response, '/fgsm', {
+    return proxyBackendJson(response, '/pgd', {
       image,
       targetProfileId,
       targetProfile: target,
     })
   } catch (error) {
     if (!requestedTargetProfile) {
-      return sendJson(response, { error: error.message || 'FGSM attack failed.' }, 500)
+      return sendJson(response, { error: error.message || 'PGD attack failed.' }, 500)
     }
 
-    return proxyBackendJson(response, '/fgsm', {
+    return proxyBackendJson(response, '/pgd', {
       image,
       targetProfileId,
       targetProfile: requestedTargetProfile,

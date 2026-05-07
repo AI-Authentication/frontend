@@ -6,7 +6,7 @@ import {
   deleteProfile,
   listProfiles,
   recognizeFace,
-  runFgsmAttack,
+  runPgdAttack,
 } from './api'
 import { Analytics } from '@vercel/analytics/react'
 import faceEncodingPhoto from './pictures/face encoding.png'
@@ -23,7 +23,7 @@ import similarityComparisonPhoto from './pictures/similarity comparison.png'
 const tabs = [
   { id: 'register', label: 'Register Face' },
   { id: 'recognize', label: 'Recognition Test' },
-  { id: 'attack', label: 'FGSM Attack Demo' },
+  { id: 'attack', label: 'PGD Attack Demo' },
   { id: 'admin', label: 'Admin' },
 ]
 
@@ -56,7 +56,7 @@ const overviewContent = {
   register: {
     heading: 'Tabs overview',
     copy:
-      'Your data and privacy are important. This demo sends only images and a name string to the backend, where they are stored in a PostgreSQL database. Your face is also not used to train the open-source model- it is only used for recognition testing and FGSM attack demos within this deployed environment.',
+      'Your data and privacy are important. This demo sends only images and a name string to the backend, where they are stored in a PostgreSQL database. Your face is also not used to train the open-source model- it is only used for recognition testing and PGD attack demos within this deployed environment.',
     cards: [
       {
         title: 'Capture sequence',
@@ -71,10 +71,10 @@ const overviewContent = {
           'In the recognition tab, you can compare a captured or uploaded face against the enrolled profiles to see if the model correctly identifies the two as the same person.',
       },
       {
-        title: 'FGSM Attack Demo',
+        title: 'PGD Attack Demo',
         image: fgsmAttackDemoPhoto,
         description:
-          'In the FGSM attack demo tab, you can see how a source image can be subtly manipulated to impersonate another enrolled user, then test the confidence of the resulting attack image against the target profile.',
+          'In the PGD attack demo tab, you can see how a source image can be subtly manipulated to impersonate another enrolled user, then test the confidence of the resulting attack image against the target profile.',
       },
     ],
   },
@@ -104,9 +104,9 @@ const overviewContent = {
     ],
   },
   attack: {
-    heading: 'How the FGSM attack works behind the scenes',
+    heading: 'How the PGD attack works behind the scenes',
     copy:
-      'Behind the scenes, FGSM computes how the model output should change to resemble a target identity, applies a small pixel-level perturbation in that direction, and then tests whether the altered image is mistaken for the target user.',
+      'Behind the scenes, PGD iteratively computes how the model output should change to resemble a target identity, applies bounded pixel-level perturbations in that direction, and then tests whether the altered image is mistaken for the target user.',
     cards: [
       {
         title: '1. Gradient target',
@@ -118,7 +118,7 @@ const overviewContent = {
         title: '2. Perturbation step',
         image: fgsmPerturbationStepPhoto,
         description:
-          'FGSM applies a small signed step along that gradient, creating a perturbed image that looks similar to a person but shifts the model response.',
+          'PGD applies repeated constrained steps along that gradient, creating a perturbed image that looks similar to a person but shifts the model response.',
       },
       {
         title: '3. Impersonation result',
@@ -674,10 +674,10 @@ function App() {
     }
 
     setIsRunningAttack(true)
-    setAttackResult('Running FGSM request.')
+    setAttackResult('Running PGD request.')
 
     try {
-      const result = await runFgsmAttack({
+      const result = await runPgdAttack({
         image: attackImage,
         targetProfileId: attackTargetId,
         targetProfile: targetProfile,
@@ -688,7 +688,7 @@ function App() {
       const targetName = target?.name || result?.targetName || 'the requested target'
       const summary =
         result?.message ||
-        `FGSM perturbation applied. Model prediction shifted toward ${targetName}.`
+        `PGD perturbation applied. Model prediction shifted toward ${targetName}.`
 
       setAttackNoiseImage(result?.perturbationImage || result?.noiseImage || '')
       setAttackOutputImage(result?.adversarialImage || attackImage)
@@ -698,7 +698,7 @@ function App() {
       setAttackNoiseImage('')
       setAttackOutputImage('')
       setAttackConfidence('')
-      setAttackResult(`FGSM request failed. ${error.message || 'Backend request failed.'}`)
+      setAttackResult(`PGD request failed. ${error.message || 'Backend request failed.'}`)
     } finally {
       setIsRunningAttack(false)
     }
@@ -718,7 +718,7 @@ function App() {
       setAttackConfidence('')
       setAttackOutputImage('')
       setAttackNoiseImage('')
-      setAttackResult('Attack image loaded. Choose a target profile and run the FGSM demo.')
+      setAttackResult('Attack image loaded. Choose a target profile and run the PGD demo.')
     })
   }
 
@@ -782,7 +782,7 @@ function App() {
         <header className="topbar">
           <div className="brand-block">
             <p className="hero-label">Created by Zack Lown and Elias Thompson</p>
-            <h1>Registration, Recognition, and FGSM attack testing</h1>
+            <h1>Registration, Recognition, and PGD attack testing</h1>
           </div>
 
           <nav className="tab-bar" aria-label="Sections">
@@ -1047,12 +1047,12 @@ function App() {
               <div className="section-card">
                 <div className="section-heading">
                   <p className="section-kicker">Adversarial Attack</p>
-                  <h2>FGSM attack showcase</h2>
+                  <h2>PGD attack showcase</h2>
                 </div>
 
                 <p className="section-copy">
                   Upload an image, choose the person you want the attack to impersonate, and send it
-                  to the FGSM endpoint. The backend should return the perturbed output and a
+                  to the PGD endpoint. The backend should return the perturbed output and a
                   confidence score for the impersonated identity.
                 </p>
 
@@ -1114,7 +1114,7 @@ function App() {
                   onClick={runAttackDemo}
                   disabled={isRunningAttack}
                 >
-                  {isRunningAttack ? 'Running...' : 'Run FGSM Attack'}
+                  {isRunningAttack ? 'Running...' : 'Run PGD Attack'}
                 </button>
 
                 <div className="result-banner warning">{attackResult}</div>
@@ -1152,7 +1152,7 @@ function App() {
                       {attackPreviewImage ? (
                         <img src={attackPreviewImage} alt="Perturbed attack preview" />
                       ) : (
-                        <div className="empty-state">Run the FGSM attack to generate the perturbed image.</div>
+                        <div className="empty-state">Run the PGD attack to generate the perturbed image.</div>
                       )}
                     </div>
                   </div>

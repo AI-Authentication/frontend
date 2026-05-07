@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import adminLoginHandler from './api/admin/login.js'
-import fgsmHandler from './api/attacks/fgsm.js'
+import pgdHandler from './api/attacks/pgd.js'
 import healthHandler from './api/health.js'
 import profilesHandler from './api/profiles.js'
 import profileByIdHandler from './api/profiles/[id].js'
@@ -30,7 +30,7 @@ app.all('/api/profiles/:id', (request, response) => {
 })
 app.post('/api/admin/login', adminLoginHandler)
 app.post('/api/recognitions', recognitionHandler)
-app.post('/api/attacks/fgsm', fgsmHandler)
+app.post('/api/attacks/pgd', pgdHandler)
 
 app.use(express.static(distDir))
 

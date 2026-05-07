@@ -4,7 +4,7 @@ const endpoints = {
   profiles: '/api/profiles',
   adminLogin: '/api/admin/login',
   recognition: '/api/recognitions',
-  fgsmAttack: '/api/attacks/fgsm',
+  pgdAttack: '/api/attacks/pgd',
 }
 
 function buildUrl(path, baseUrl = API_BASE_URL) {
@@ -115,8 +115,8 @@ export async function recognizeFace({ image, selectedProfileId, referenceProfile
   })
 }
 
-export async function runFgsmAttack({ image, targetProfileId, targetProfile }) {
-  return request(endpoints.fgsmAttack, {
+export async function runPgdAttack({ image, targetProfileId, targetProfile }) {
+  return request(endpoints.pgdAttack, {
     method: 'POST',
     body: JSON.stringify({
       image,

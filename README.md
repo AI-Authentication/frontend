@@ -1,6 +1,6 @@
 # frontend
 
-Frontend webapp for face-auth registration, recognition, FGSM demo flow, and admin user management.
+Frontend webapp for face-auth registration, recognition, PGD demo flow, and admin user management.
 
 ## Local setup
 
