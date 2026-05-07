@@ -15,13 +15,14 @@ export default async function handler(request, response) {
     const body = await readJsonBody(request)
     const name = String(body?.name || '').trim()
     const captures = body?.captures && typeof body.captures === 'object' ? body.captures : {}
+    const firstCapture = Object.values(captures).find(Boolean)
 
     if (!name) {
       return sendJson(response, { error: 'Name is required.' }, 400)
     }
 
-    if (!captures.front) {
-      return sendJson(response, { error: 'At least a front capture is required.' }, 400)
+    if (!firstCapture) {
+      return sendJson(response, { error: 'At least one capture is required.' }, 400)
     }
 
     try {

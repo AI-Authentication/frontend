@@ -26,7 +26,7 @@ export default async function handler(request, response) {
       return sendJson(response, { error: 'No target profile is available.' }, 404)
     }
 
-    return proxyBackendJson(response, '/pgd', {
+    return proxyBackendJson(response, '/pgd-impersonation', {
       image,
       targetProfileId,
       targetProfile: target,
@@ -36,7 +36,7 @@ export default async function handler(request, response) {
       return sendJson(response, { error: error.message || 'PGD attack failed.' }, 500)
     }
 
-    return proxyBackendJson(response, '/pgd', {
+    return proxyBackendJson(response, '/pgd-impersonation', {
       image,
       targetProfileId,
       targetProfile: requestedTargetProfile,

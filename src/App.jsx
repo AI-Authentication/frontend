@@ -28,11 +28,11 @@ const tabs = [
 ]
 
 const capturePrompts = [
-  { id: 'front', label: 'Straight on' },
-  { id: 'left', label: 'Look left' },
-  { id: 'right', label: 'Look right' },
-  { id: 'brows', label: 'Eyebrows up' },
-  { id: 'down', label: 'Head down' },
+  { id: 'shot1', label: '1' },
+  { id: 'shot2', label: '2' },
+  { id: 'shot3', label: '3' },
+  { id: 'shot4', label: '4' },
+  { id: 'shot5', label: '5' },
 ]
 
 const seedProfiles = [
@@ -62,7 +62,7 @@ const overviewContent = {
         title: 'Capture sequence',
         image: recognitionWalkthroughNoTextPhoto,
         description:
-          'In this tab, follow the prompts through multiple camera views so the profile has coverage across pose changes. Your face is then stored in the database for use in the other tabs. Contact Zack or Elias if you would like your profile to be removed.',
+          'In this tab, capture five straight-on photos labeled 1 through 5. Your face is then stored in the database for use in the other tabs. Contact Zack or Elias if you would like your profile to be removed.',
       },
       {
         title: 'Recognition Test',
@@ -132,6 +132,19 @@ const overviewContent = {
 
 function getProfileById(profiles, profileId) {
   return profiles.find((profile) => String(profile.id) === String(profileId))
+}
+
+function hasStoredCaptureData(profile) {
+  if (!profile || typeof profile !== 'object') return false
+
+  const captureValues =
+    profile.captures && typeof profile.captures === 'object' ? Object.values(profile.captures) : []
+  const photoValues = Array.isArray(profile.photos) ? profile.photos : []
+  const imageValues = [profile.image, profile.imageUrl]
+
+  return [...captureValues, ...photoValues, ...imageValues].some(
+    (value) => typeof value === 'string' && value.startsWith('data:image/'),
+  )
 }
 
 function formatConfidence(confidence) {
@@ -285,7 +298,7 @@ function App() {
   const [cameraError, setCameraError] = useState('')
   const [cameraView, setCameraView] = useState(null)
   const [registerMessage, setRegisterMessage] = useState(
-    'Capture the five guided face photos, then save to the database.',
+    'Capture the five straight-on face photos labeled 1 through 5, then save to the database.',
   )
   const [recognitionMode, setRecognitionMode] = useState('upload')
   const [recognitionImage, setRecognitionImage] = useState('')
@@ -488,7 +501,7 @@ function App() {
       setCameraReady(true)
       setCameraState('ready')
       if (view === 'register') {
-        setRegisterMessage('Camera is live. Capture all five guided poses to finish registration.')
+        setRegisterMessage('Camera is live. Capture all five straight-on photos to finish registration.')
       } else if (view === 'recognize') {
         setRecognitionResult('Camera is live. Capture a test face when you are ready.')
       } else {
@@ -533,7 +546,7 @@ function App() {
     }
 
     setCapturedShots(nextShots)
-    setCapturedImage(nextShots.front || nextImage)
+    setCapturedImage(nextShots.shot1 || nextImage)
 
     if (captureStep < capturePrompts.length - 1) {
       setCaptureStep(captureStep + 1)
@@ -670,6 +683,11 @@ function App() {
   async function runAttackDemo() {
     if (!attackImage) {
       setAttackResult('Upload an attack image first.')
+      return
+    }
+
+    if (!targetProfile || !hasStoredCaptureData(targetProfile)) {
+      setAttackResult('PGD requires a real registered target profile with saved captures. Demo profiles cannot be used.')
       return
     }
 
@@ -817,7 +835,7 @@ function App() {
                 </div>
 
                 <p className="section-copy">
-                  Capture five guided images. See below for how your captured profile is stored and used in the recognition and attack demo tabs. Your data is not shared or sold.
+                  Capture five straight-on images labeled 1 through 5. See below for how your captured profile is stored and used in the recognition and attack demo tabs. Your data is not shared or sold.
                 </p>
 
                 <div className="camera-frame">
