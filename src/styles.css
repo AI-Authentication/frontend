@@ -298,6 +298,8 @@ input[type='file'] {
   gap: 6px;
   max-height: 240px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 8px;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
@@ -512,6 +514,11 @@ input[type='file'] {
 
 .database-list {
   margin-top: 22px;
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 6px;
 }
 
 .list-header,
