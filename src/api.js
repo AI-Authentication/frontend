@@ -104,13 +104,11 @@ export async function deleteProfile(profileId, credentials) {
   })
 }
 
-export async function recognizeFace({ image, selectedProfileId, referenceProfile }) {
+export async function recognizeFace({ image }) {
   return request(endpoints.recognition, {
     method: 'POST',
     body: JSON.stringify({
       image,
-      selectedProfileId,
-      referenceProfile,
     }),
   })
 }

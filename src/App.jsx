@@ -93,7 +93,7 @@ const overviewContent = {
         title: '2. Similarity comparison',
         image: similarityComparisonPhoto,
         description:
-          'That embedding is compared against the stored embeddings for enrolled users to measure how close the facial feature patterns are. On this site, the database profiles are not searched and only one profile can be selected for comparison.',
+          'That embedding is compared against the stored embeddings for enrolled users to measure how close the facial feature patterns are. On this site, the recognition request checks all enrolled profiles and returns the strongest match.',
       },
       {
         title: '3. Match decision',
@@ -302,7 +302,6 @@ function App() {
   )
   const [recognitionMode, setRecognitionMode] = useState('upload')
   const [recognitionImage, setRecognitionImage] = useState('')
-  const [recognizedProfileId, setRecognizedProfileId] = useState(String(seedProfiles[0].id))
   const [recognitionResult, setRecognitionResult] = useState('')
   const [attackImage, setAttackImage] = useState('')
   const [attackTargetId, setAttackTargetId] = useState(String(seedProfiles[1].id))
@@ -365,7 +364,6 @@ function App() {
         if (cancelled || remoteProfiles.length === 0) return
 
         setProfiles(remoteProfiles)
-        setRecognizedProfileId(String(remoteProfiles[0].id))
         setAttackTargetId(String(remoteProfiles[0].id))
         setApiStatus(`Connected to ${API_BASE_URL || 'the current origin'} and loaded profiles.`)
       } catch (error) {
@@ -387,14 +385,10 @@ function App() {
   useEffect(() => {
     if (profiles.length === 0) return
 
-    if (!getProfileById(profiles, recognizedProfileId)) {
-      setRecognizedProfileId(String(profiles[0].id))
-    }
-
     if (!getProfileById(profiles, attackTargetId)) {
       setAttackTargetId(String(profiles[0].id))
     }
-  }, [profiles, recognizedProfileId, attackTargetId])
+  }, [profiles, attackTargetId])
 
   useEffect(() => {
     stopCamera()
@@ -605,7 +599,6 @@ function App() {
       })
 
       setProfiles((current) => [profile, ...current.filter((item) => String(item.id) !== String(profile.id))])
-      setRecognizedProfileId(String(profile.id))
       setAttackTargetId(String(profile.id))
       setCaptureName('')
       setCapturedImage('')
@@ -644,8 +637,6 @@ function App() {
     try {
       const result = await recognizeFace({
         image: imageToRecognize,
-        selectedProfileId: recognizedProfileId,
-        referenceProfile: selectedRecognitionProfile,
       })
       const confidenceText = formatConfidence(result?.confidence)
       const isMatch =
@@ -667,7 +658,7 @@ function App() {
         )
       const matchedName =
         matchedProfile?.name || result?.name || result?.matchedName || result?.matched_name || 'Unknown user'
-      const statusText = isMatch ? `Match: ${matchedName}` : 'Match: No match'
+      const statusText = isMatch ? `Match: ${matchedName}` : 'No match found'
       const details = [confidenceText && `Confidence: ${confidenceText}`, result?.message]
         .filter(Boolean)
         .join(' ')
@@ -778,7 +769,6 @@ function App() {
   }
 
   const targetProfile = getProfileById(profiles, attackTargetId)
-  const selectedRecognitionProfile = getProfileById(profiles, recognizedProfileId)
   const activeOverview = overviewContent[activeTab]
   const attackPreviewImage = attackOutputImage || attackNoiseImage || ''
   const attackConfidenceLabel = attackConfidence
@@ -1006,13 +996,6 @@ function App() {
                   </div>
                 )}
 
-                <ProfilePicker
-                  label="Selected enrolled profile"
-                  profiles={profiles}
-                  selectedId={recognizedProfileId}
-                  onSelect={setRecognizedProfileId}
-                />
-
                 <button
                   type="button"
                   className="primary-button wide"
@@ -1026,7 +1009,7 @@ function App() {
               <div className="section-card preview-card">
                 <div className="section-heading">
                   <p className="section-kicker">Inference Input</p>
-                  <h2>Test image and enrolled profile</h2>
+                  <h2>Test image and best matched profile</h2>
                 </div>
 
                 <div className="recognition-preview-grid">
@@ -1044,13 +1027,9 @@ function App() {
                   </div>
 
                   <div className="recognition-preview-card">
-                    <p className="attack-stage-label attack-stage-heading">Enrolled photo</p>
+                    <p className="attack-stage-label attack-stage-heading">Database search</p>
                     <div className="face-preview recognition-square">
-                      {selectedRecognitionProfile ? (
-                        <img src={selectedRecognitionProfile.image} alt={selectedRecognitionProfile.name} />
-                      ) : (
-                        <div className="empty-state">Choose an enrolled profile.</div>
-                      )}
+                      <div className="empty-state">Recognition checks all enrolled profiles.</div>
                     </div>
                   </div>
                 </div>
