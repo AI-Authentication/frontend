@@ -936,14 +936,16 @@ function App() {
                     <span>{profiles.length} users</span>
                   </div>
 
-                  {profiles.map((profile) => (
-                    <div className="profile-row" key={profile.id}>
-                      <img src={profile.image} alt={profile.name} />
-                      <div>
-                        <strong>{profile.name}</strong>
+                  <div className="database-list-scroll">
+                    {profiles.map((profile) => (
+                      <div className="profile-row" key={profile.id}>
+                        <img src={profile.image} alt={profile.name} />
+                        <div>
+                          <strong>{profile.name}</strong>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             </section>
@@ -1246,7 +1248,7 @@ function App() {
                       </button>
                     </div>
 
-                    <div className="database-list">
+                    <div className="database-list database-list-scroll">
                       {profiles.map((profile) => (
                         <div className="profile-row admin-row" key={profile.id}>
                           <div className="profile-meta">

@@ -514,7 +514,11 @@ input[type='file'] {
 
 .database-list {
   margin-top: 22px;
-  max-height: 360px;
+}
+
+.database-list-scroll {
+  --profile-row-height: 84px;
+  max-height: calc(var(--profile-row-height) * 6);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
