@@ -563,6 +563,22 @@ input[type='file'] {
   gap: 16px;
 }
 
+.admin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.admin-toggle input {
+  width: auto;
+  margin: 0;
+}
+
 .admin-credentials,
 .admin-row {
   display: flex;

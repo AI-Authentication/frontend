@@ -52,6 +52,8 @@ const seedProfiles = [
   },
 ]
 
+const SHOW_RECOGNITION_CONFIDENCE_STORAGE_KEY = 'show-recognition-confidence'
+
 const overviewContent = {
   register: {
     heading: 'Tabs overview',
@@ -319,6 +321,7 @@ function App() {
   const [adminCredentials, setAdminCredentials] = useState(null)
   const [adminMessage, setAdminMessage] = useState('Use the admin login to manage enrolled users.')
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
+  const [showRecognitionConfidence, setShowRecognitionConfidence] = useState(false)
   const registerVideoRef = useRef(null)
   const recognitionVideoRef = useRef(null)
   const attackVideoRef = useRef(null)
@@ -355,6 +358,15 @@ function App() {
   }
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const storedPreference = window.localStorage.getItem(
+      SHOW_RECOGNITION_CONFIDENCE_STORAGE_KEY,
+    )
+    setShowRecognitionConfidence(storedPreference === 'true')
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
 
     async function loadProfiles() {
@@ -381,6 +393,15 @@ function App() {
       stopCamera()
     }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    window.localStorage.setItem(
+      SHOW_RECOGNITION_CONFIDENCE_STORAGE_KEY,
+      String(showRecognitionConfidence),
+    )
+  }, [showRecognitionConfidence])
 
   useEffect(() => {
     if (profiles.length === 0) return
@@ -659,7 +680,10 @@ function App() {
       const matchedName =
         matchedProfile?.name || result?.name || result?.matchedName || result?.matched_name || 'Unknown user'
       const statusText = isMatch ? `Match: ${matchedName}` : 'No match found'
-      const details = [confidenceText && `Confidence: ${confidenceText}`, result?.message]
+      const details = [
+        showRecognitionConfidence && confidenceText ? `Confidence: ${confidenceText}` : '',
+        result?.message,
+      ]
         .filter(Boolean)
         .join(' ')
 
@@ -951,7 +975,8 @@ function App() {
 
                 <p className="section-copy">
                   Use an uploaded image or live camera capture and send it to the recognition
-                  endpoint. The API returns the matched profile plus a confidence score.
+                  endpoint. The API returns the matched profile. Admins can optionally enable the
+                  confidence score.
                 </p>
 
                 <div className="inline-actions">
@@ -1226,6 +1251,14 @@ function App() {
                         Log Out
                       </button>
                     </div>
+                    <label className="admin-toggle">
+                      <input
+                        type="checkbox"
+                        checked={showRecognitionConfidence}
+                        onChange={(event) => setShowRecognitionConfidence(event.target.checked)}
+                      />
+                      <span>Show recognition confidence percentage</span>
+                    </label>
 
                     <div className="database-list database-list-scroll">
                       {profiles.map((profile) => (
