@@ -633,6 +633,7 @@ input[type='file'] {
   display: grid;
   gap: 12px;
   align-content: start;
+  min-width: 0;
 }
 
 .attack-square {
@@ -682,15 +683,21 @@ input[type='file'] {
 .confidence-score {
   display: grid;
   place-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(47, 127, 249, 0.16), rgba(12, 22, 35, 0.92));
   font-family: 'Space Grotesk', sans-serif;
-  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  font-size: clamp(1.5rem, 4vw, 2.6rem);
+  line-height: 1;
+  white-space: nowrap;
   font-weight: 700;
   color: var(--text);
   text-align: center;
-  padding: 24px;
+  padding: clamp(10px, 2vw, 18px);
 }
 
 .confidence-copy,
